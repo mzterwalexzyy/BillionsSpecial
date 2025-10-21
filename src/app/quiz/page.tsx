@@ -1,239 +1,334 @@
+// src/app/quiz/page.tsx
 "use client";
-import { useEffect, useState } from "react";
-// Replaced: import { ArrowLeft, RefreshCw, ChevronRight, CheckCircle, XCircle, Timer } from 'lucide-react';
 
-// --- SVG Icons (Replacement for lucide-react) ---
+import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
+import { LEVELS, Question, LevelPool } from "@/lib/questions";
+import { motion, AnimatePresence } from "framer-motion";
 
-const ArrowLeftIcon = (props: { className?: string }) => (
-  <svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m12 19-7-7 7-7"/><path d="M19 12H5"/></svg>
-);
+/* ---------- Small confetti using framer-motion ---------- */
 
-const RefreshCwIcon = (props: { className?: string }) => (
-  <svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-3.35 1.7"/><path d="M6 8V5h3"/><path d="M3 3v3h3"/></svg>
-);
+function FramerMotionConfetti({ active }: { active: boolean }) {
+  // create 24 pieces with random positions/directions
+  const pieces = Array.from({ length: 24 }).map((_, i) => {
+    const angle = Math.random() * Math.PI * 2;
+    const distance = 120 + Math.random() * 160;
+    const rotate = (Math.random() - 0.5) * 720;
+    const delay = Math.random() * 0.35;
+    const colorPool = ["#FFD700", "#00FFFF", "#7AF3FF", "#00FF99", "#BBD8FF"];
+    const color = colorPool[i % colorPool.length];
+    return { id: i, angle, distance, rotate, delay, color };
+  });
 
-const ChevronRightIcon = (props: { className?: string }) => (
-  <svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m9 18 6-6-6-6"/></svg>
-);
+  return (
+    <AnimatePresence>
+      {active && (
+        <div className="pointer-events-none fixed inset-0 z-50 flex items-start justify-center">
+          <div className="relative w-full h-full">
+            {pieces.map((p) => (
+              <motion.div
+                key={p.id}
+                initial={{ opacity: 0, y: -20, x: 0, rotate: 0, scale: 0.8 }}
+                animate={{
+                  opacity: [1, 1, 0],
+                  x: Math.cos(p.angle) * p.distance,
+                  y: Math.sin(p.angle) * p.distance,
+                  rotate: p.rotate,
+                  scale: [1, 0.9, 0.7],
+                }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 1.1, delay: p.delay, ease: "easeOut" }}
+                className="absolute left-1/2 top-1/4"
+                style={{
+                  background: p.color,
+                  width: 10 + (p.id % 3) * 5,
+                  height: 6 + (p.id % 2) * 6,
+                  borderRadius: 2,
+                  boxShadow: `0 6px 18px ${p.color}33`,
+                }}
+              />
+            ))}
+          </div>
+        </div>
+      )}
+    </AnimatePresence>
+  );
+}
 
-const CheckCircleIcon = (props: { className?: string }) => (
-  <svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="m9 11 3 3L22 4"/></svg>
-);
+/* ---------- Helper: pickRandom (unchanged) ---------- */
+function pickRandom<T>(arr: T[], n: number) {
+  const a = arr.slice();
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a.slice(0, n);
+}
 
-const XCircleIcon = (props: { className?: string }) => (
-  <svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><path d="m15 9-6 6"/><path d="m9 9 6 6"/></svg>
-);
+/* ---------- Leaderboard local push helper ---------- */
+function pushToLocalLeaderboard(username: string, levelTitle: string, score: number, total: number) {
+  try {
+    const raw = localStorage.getItem("bna_leaderboard") || "[]";
+    const list = JSON.parse(raw) as any[];
+    const entry = {
+      username,
+      level: levelTitle,
+      score,
+      total,
+      date: new Date().toISOString(),
+    };
+    list.push(entry);
+    // keep top 100
+    localStorage.setItem("bna_leaderboard", JSON.stringify(list.slice(-100)));
+  } catch (e) {
+    console.error("leaderboard push failed", e);
+  }
+}
 
-const TimerIcon = (props: { className?: string }) => (
-  <svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10 2h4"/><path d="M12 14v-4"/><path d="M4 13a8 8 0 0 0 8 8 8 8 0 0 0 8-8"/></svg>
-);
+/* ---------- Optional: POST to API stub if exists (non-blocking) ---------- */
+async function postToServerLeaderboard(entry: { username: string; level: string; score: number; total: number }) {
+  try {
+    await fetch("/api/leaderboard/submit", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(entry),
+    });
+  } catch (e) {
+    // ignore network errors (server might not exist yet)
+    console.debug("server leaderboard post failed (expected if no backend):", e);
+  }
+}
 
-
-// --- Type Definitions ---
-type Question = {
-  question: string;
-  options: string[];
-  answer: string;
-};
-
-type Level = {
-  title: string;
-  questions: Question[];
-  passMark: number;
-};
-
-// --- Quiz Data ---
-// In a real application, this data would be fetched from a database (like the one managed in db.ts)
-const levels: Level[] = [
-  {
-    title: "Beginner: Core Concepts",
-    passMark: 60,
-    questions: [
-      { question: "What is staking?", options: ["Locking tokens to secure a network", "Sending tokens to a friend", "Burning tokens to reduce supply", "Minting new tokens on demand"], answer: "Locking tokens to secure a network" },
-      { question: "What does DAO stand for?", options: ["Data Access Object", "Decentralized Autonomous Organization", "Digital Asset Option", "Direct Allocation Order"], answer: "Decentralized Autonomous Organization" },
-    ],
-  },
-  {
-    title: "Intermediate: Smart Contracts",
-    passMark: 70,
-    questions: [
-      { question: "What is a smart contract?", options: ["A physical contract", "Code that runs on a blockchain", "A signature verification tool", "A digital ID"], answer: "Code that runs on a blockchain" },
-      { question: "Which blockchain most famously uses Solidity?", options: ["Bitcoin", "Cardano", "Ethereum", "Polkadot"], answer: "Ethereum" },
-    ],
-  },
-  {
-    title: "Expert: DeFi Metrics",
-    passMark: 80,
-    questions: [
-      { question: "What is TVL in DeFi?", options: ["Total Value Locked", "Token Value Level", "Transaction Volume Limit", "Trade Volume Ledger"], answer: "Total Value Locked" },
-      { question: "What’s the primary purpose of a blockchain validator?", options: ["To confirm transactions", "To hold NFTs", "To create wallets", "To manage liquidity pools"], answer: "To confirm transactions" },
-    ],
-  },
-  {
-    title: "OG Level: Operator Networks",
-    passMark: 90,
-    questions: [
-      { question: "Universal Staking allows staking across which boundary?", options: ["Single protocol", "Multiple protocols", "One wallet", "One chain"], answer: "Multiple protocols" },
-      { question: "What’s an operator network?", options: ["A local blockchain fork", "An L2 liquidity pool", "A set of agents validating traps", "A trading bot"], answer: "A set of agents validating traps" },
-    ],
-  },
-];
-
+/* ---------- Main QuizPage (based on previous logic) ---------- */
 export default function QuizPage() {
-  const [levelIndex, setLevelIndex] = useState(0);
+  const router = useRouter();
+  const [username, setUsername] = useState<string | null>(null);
+  const [playerLevel, setPlayerLevel] = useState<number>(0);
+
+  // session-level data
+  const [sessionQuestions, setSessionQuestions] = useState<Question[]>([]);
   const [qIndex, setQIndex] = useState(0);
   const [score, setScore] = useState(0);
+
+  // feedback/timer UI
+  const [selected, setSelected] = useState<string | null>(null);
   const [showFeedback, setShowFeedback] = useState(false);
   const [feedbackText, setFeedbackText] = useState("");
-  const [selectedOption, setSelectedOption] = useState<string | null>(null);
+  const [timeLeft, setTimeLeft] = useState(10);
+
+  // level summary / overlay
+  const [showSummary, setShowSummary] = useState(false);
   const [passed, setPassed] = useState(false);
-  const [showLevelSummary, setShowLevelSummary] = useState(false);
-  const [timeLeft, setTimeLeft] = useState(12);
 
-  const level = levels[levelIndex];
-  const currentQuestion = level?.questions[qIndex];
+  // confetti control
+  const [confettiActive, setConfettiActive] = useState(false);
 
-  // Base time decreases slightly as levels get harder (though data might be wrong, we follow the user's logic)
-  const baseTimeByLevel = [12, 16, 20, 25];
-  const baseTime = baseTimeByLevel[levelIndex] ?? 12;
+  // current level config
+  const levelConfig = useMemo<LevelPool>(() => LEVELS[playerLevel], [playerLevel]);
 
-  // --- Timer Effect ---
+  // load username + progress
   useEffect(() => {
-    if (!currentQuestion) return; // Prevent timer from running if level data is missing
-    if (showLevelSummary || showFeedback) return;
-
-    // Time out handler
-    if (timeLeft <= 0) {
-      handleAnswer(null, true);
+    const u = localStorage.getItem("bna_username");
+    if (!u) {
+      router.push("/login");
       return;
     }
+    setUsername(u);
 
-    const timer = setTimeout(() => setTimeLeft((s) => s - 1), 1000);
-    return () => clearTimeout(timer);
-  }, [timeLeft, showFeedback, showLevelSummary, qIndex, levelIndex, currentQuestion]);
+    const progressKey = `bna_progress_${u}`;
+    const raw = localStorage.getItem(progressKey);
+    if (raw) {
+      try {
+        const parsed = JSON.parse(raw);
+        setPlayerLevel(parsed.levelIndex ?? 0);
+      } catch {
+        setPlayerLevel(0);
+      }
+    } else {
+      localStorage.setItem(progressKey, JSON.stringify({ levelIndex: 0 }));
+      setPlayerLevel(0);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
-  // --- Answer Handling Logic ---
-  const handleAnswer = (option: string | null, timedOut = false) => {
-    if (!currentQuestion || showFeedback) return;
+  // build / load session questions
+  useEffect(() => {
+    if (playerLevel == null) return;
+    if (!username) return;
 
-    const isCorrect = option !== null && option === currentQuestion.answer;
+    const sessKeyBase = `bna_session_${username}_level_${playerLevel}`;
+    const stored = sessionStorage.getItem(sessKeyBase);
+    if (stored) {
+      try {
+        const parsed: Question[] = JSON.parse(stored);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          setSessionQuestions(parsed);
+          setQIndex(parseInt(sessionStorage.getItem(`${sessKeyBase}_index`) || "0", 10) || 0);
+          setScore(parseInt(sessionStorage.getItem(`${sessKeyBase}_score`) || "0", 10) || 0);
+          setTimeLeft(levelConfig?.timePerQuestion ?? 10);
+          return;
+        }
+      } catch {}
+    }
+
+    const chosen = pickRandom(levelConfig.pool, levelConfig.perSession);
+    sessionStorage.setItem(sessKeyBase, JSON.stringify(chosen));
+    sessionStorage.setItem(`${sessKeyBase}_index`, "0");
+    sessionStorage.setItem(`${sessKeyBase}_score`, "0");
+    setSessionQuestions(chosen);
+    setQIndex(0);
+    setScore(0);
+    setTimeLeft(levelConfig?.timePerQuestion ?? 10);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [playerLevel, username]);
+
+  // Timer effect
+  useEffect(() => {
+    if (!sessionQuestions.length) return;
+    if (showFeedback || showSummary) return;
+    if (timeLeft <= 0) {
+      submitAnswer(null, true);
+      return;
+    }
+    const t = setTimeout(() => setTimeLeft((s) => s - 1), 1000);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [timeLeft, showFeedback, showSummary, qIndex, sessionQuestions.length]);
+
+  // submitAnswer
+  const submitAnswer = (option: string | null, timedOut = false) => {
+    if (!sessionQuestions.length) return;
+    if (showFeedback) return;
+
+    const current = sessionQuestions[qIndex];
+    const isCorrect = option !== null && option === current.answer;
     const newScore = isCorrect ? score + 1 : score;
     setScore(newScore);
-    setSelectedOption(option);
+    setSelected(option);
 
-    // Show feedback
-    if (isCorrect) {
-      setFeedbackText("✅ Correct — nice one!");
-    } else if (timedOut) {
-      setFeedbackText("⏰ Time’s up — the correct answer is highlighted!");
-    } else {
-      setFeedbackText("❌ That wasn’t it — the correct answer is highlighted.");
-    }
+    if (isCorrect) setFeedbackText("✅ Correct — nice one!");
+    else if (timedOut) setFeedbackText(`⏰ Time’s up — correct: ${current.answer}`);
+    else setFeedbackText(`❌ Wrong — correct: ${current.answer}`);
+
     setShowFeedback(true);
 
-    // Move to next question or summary after short delay
+    // persist
+    const sessKeyBase = `bna_session_${username ?? "anon"}_level_${playerLevel}`;
+    sessionStorage.setItem(`${sessKeyBase}_index`, String(qIndex));
+    sessionStorage.setItem(`${sessKeyBase}_score`, String(newScore));
+
     setTimeout(() => {
       setShowFeedback(false);
-      setFeedbackText("");
-      setSelectedOption(null);
+      setSelected(null);
       const next = qIndex + 1;
 
-      if (next < level.questions.length) {
+      if (next < sessionQuestions.length) {
         setQIndex(next);
-        setTimeLeft(baseTimeByLevel[levelIndex] ?? 12); // Reset timer for the new question
+        sessionStorage.setItem(`${sessKeyBase}_index`, String(next));
+        setTimeLeft(levelConfig.timePerQuestion);
       } else {
-        const total = level.questions.length;
+        // finished level
+        const total = sessionQuestions.length;
         const percent = (newScore / total) * 100;
-        const didPass = percent >= level.passMark;
+        const didPass = percent >= levelConfig.passMark;
         setPassed(didPass);
-        setShowLevelSummary(true);
+        setShowSummary(true);
+
+        if (didPass) {
+          // show confetti and record leaderboard entry
+          setConfettiActive(true);
+          setTimeout(() => setConfettiActive(false), 1600);
+
+          if (username) {
+            pushToLocalLeaderboard(username, levelConfig.title, newScore, total);
+            postToServerLeaderboard({ username, level: levelConfig.title, score: newScore, total }).catch(() => {});
+            // advance locally
+            const progressKey = `bna_progress_${username}`;
+            localStorage.setItem(progressKey, JSON.stringify({ levelIndex: Math.min(playerLevel + 1, LEVELS.length - 1) }));
+          }
+        }
       }
-    }, 1600); // 1.6 seconds delay to show feedback
+    }, 1400);
   };
 
-  // --- Navigation/Reset Functions ---
-  const resetLevel = () => {
+  // retry level (reshuffle)
+  const retryLevel = () => {
+    if (!username) return;
+    const sessKeyBase = `bna_session_${username}_level_${playerLevel}`;
+    const chosen = pickRandom(levelConfig.pool, levelConfig.perSession);
+    sessionStorage.setItem(sessKeyBase, JSON.stringify(chosen));
+    sessionStorage.setItem(`${sessKeyBase}_index`, "0");
+    sessionStorage.setItem(`${sessKeyBase}_score`, "0");
+    setSessionQuestions(chosen);
     setQIndex(0);
     setScore(0);
-    setShowLevelSummary(false);
-    setTimeLeft(baseTime);
+    setShowSummary(false);
+    setPassed(false);
+    setTimeLeft(levelConfig.timePerQuestion);
   };
 
-  const goToNextLevel = () => {
-    setLevelIndex((p) => p + 1);
-    setQIndex(0);
-    setScore(0);
-    setShowLevelSummary(false);
-    setTimeLeft(baseTimeByLevel[levelIndex + 1] ?? 12);
+  // proceed to next level
+  const proceed = () => {
+    const next = Math.min(playerLevel + 1, LEVELS.length - 1);
+    setPlayerLevel(next);
+    setShowSummary(false);
+    setPassed(false);
+    setSessionQuestions([]); // effect will rebuild
   };
 
-  // Guard clause for when all levels are completed (shouldn't happen with the current data structure but good practice)
-  if (!level) {
+  // go home
+  const goHome = () => router.push("/home");
+
+  if (!username) {
     return (
-        <main className="flex flex-col items-center justify-center min-h-screen bg-black text-white text-center p-6">
-            <h1 className="text-3xl font-bold mb-4 text-[#FFD700]">All Levels Complete! 🏆</h1>
-            <p className="text-lg">You have achieved OG status. Check out the Scramble mode for a new challenge!</p>
-            <a href="/scramble" className="mt-8 px-6 py-3 bg-[#FFD700] text-black rounded-lg font-bold transition duration-300 hover:bg-yellow-400 flex items-center">
-                Go to Scramble Mode <ChevronRightIcon className="ml-2 w-5 h-5" />
-            </a>
-        </main>
+      <main className="min-h-screen bg-black text-white flex items-center justify-center p-6">
+        <div className="max-w-md w-full bg-[#071019] rounded-2xl p-6 text-center">Loading session...</div>
+      </main>
     );
   }
 
-  // --- Level Summary Screen ---
-  if (showLevelSummary) {
-    const total = level.questions.length;
-    const percent = Math.round((score / total) * 100);
-
+  // summary screen
+  if (showSummary) {
+    const total = sessionQuestions.length || levelConfig.perSession;
+    const percent = Math.round((score / Math.max(1, total)) * 100);
     return (
-      <main className="flex flex-col items-center justify-center min-h-screen bg-black text-white text-center p-6">
-        <div className="max-w-md w-full bg-white/10 backdrop-blur-lg rounded-2xl p-8 shadow-2xl border border-white/20">
-          <div className={`p-4 rounded-full w-20 h-20 mx-auto mb-6 flex items-center justify-center ${passed ? 'bg-green-600/20' : 'bg-red-600/20'}`}>
-            {passed ? <CheckCircleIcon className="w-12 h-12 text-green-400"/> : <XCircleIcon className="w-12 h-12 text-red-400"/>}
-          </div>
-          
-          <h1 className="text-3xl font-extrabold mb-4">{level.title} Summary</h1>
-          <p className="text-xl mb-6">
-            Score: <span className="text-[#FFD700] font-bold">{score}</span> / {total} ({percent}%)
-          </p>
+      <main className="min-h-screen bg-black text-white p-6 flex items-center justify-center">
+        <FramerMotionConfetti active={confettiActive} />
+        <div className="max-w-lg w-full bg-[#071019] rounded-2xl border border-white/6 p-8 text-center shadow-lg">
+          <h2 className={`text-2xl font-bold mb-3 ${passed ? "text-[#00FFFF]" : "text-red-400"}`}>
+            {passed ? "Level Cleared 🎉" : "Almost there"}
+          </h2>
+          <p className="mb-4">You scored <span className="text-[#FFD700] font-bold">{score}</span> / {total} ({percent}%)</p>
 
-          {passed ? (
+          {!passed ? (
             <>
-              <p className="text-green-400 text-lg mb-8">Great job! You’ve passed this level 🎉</p>
-              {levelIndex + 1 < levels.length ? (
-                <button
-                  onClick={goToNextLevel}
-                  className="w-full bg-[#FFD700] text-black px-6 py-3 rounded-xl font-bold transition duration-300 hover:bg-yellow-400 shadow-lg flex items-center justify-center"
-                >
-                  Proceed to {levels[levelIndex + 1].title} <ChevronRightIcon className="ml-2 w-5 h-5" />
+              <p className="text-white/70 mb-6">You’ve done your part, but you can do better 💪</p>
+
+              <div className="flex flex-col items-center gap-3">
+                <a href="https://billions.network/" target="_blank" rel="noreferrer" className="w-full text-center px-5 py-3 bg-[#FFD700] text-black rounded-lg font-semibold hover:bg-yellow-400 transition">
+                  📘 Read Docs
+                </a>
+
+                <button onClick={retryLevel} className="w-full px-5 py-3 border border-white/10 rounded-lg hover:bg-white/6 transition">
+                  🔁 Retry Level
                 </button>
-              ) : (
-                <p className="text-[#FFD700] text-2xl font-bold">You’re now an OG! 🏆</p>
-              )}
+
+                <button onClick={goHome} className="mt-3 text-xs text-white/50">← Back to Home</button>
+              </div>
             </>
           ) : (
             <>
-              <p className="text-red-400 text-lg mb-4">
-                You need at least <span className="font-bold">{level.passMark}%</span> to move on.
-              </p>
-              <p className="text-gray-300 mb-8">
-                You’ve done your part, but you can do better 💪 <br />
-                Take a short break, read a bit, and come back stronger.
-              </p>
-              <div className="flex flex-col items-center space-y-4">
-                <a
-                  href="https://docs.billionsnetwork.xyz/"
-                  target="_blank"
-                  className="text-[#FFD700] text-sm underline hover:text-yellow-400 transition"
-                >
-                  <ArrowLeftIcon className="inline-block w-4 h-4 mr-1"/> Read Docs for a refresher
-                </a>
-                <button
-                  onClick={resetLevel}
-                  className="w-full bg-red-600/50 text-white px-6 py-3 rounded-xl font-bold transition duration-300 hover:bg-red-500 flex items-center justify-center"
-                >
-                  <RefreshCwIcon className="mr-2 w-4 h-4" /> Retry Level
+              <p className="text-white/70 mb-6">Nice job! You're ready for the next challenge.</p>
+              {playerLevel + 1 < LEVELS.length ? (
+                <button onClick={proceed} className="w-full px-5 py-3 bg-[#00FFFF] text-black rounded-lg font-semibold hover:opacity-95">
+                  Proceed to {LEVELS[playerLevel + 1].title}
                 </button>
+              ) : (
+                <p className="text-[#FFD700] font-bold">You completed all levels — you're an OG!</p>
+              )}
+
+              <div className="mt-4">
+                <a href="/leaderboard" className="text-sm text-[#00FFFF] underline">View Leaderboard</a>
               </div>
             </>
           )}
@@ -242,75 +337,57 @@ export default function QuizPage() {
     );
   }
 
-  // --- Main Quiz Screen ---
+  const current = sessionQuestions[qIndex];
+  if (!current) {
+    return (
+      <main className="min-h-screen bg-black text-white flex items-center justify-center p-6">
+        <div className="max-w-md w-full bg-[#071019] rounded-2xl p-6 text-center">Preparing questions...</div>
+      </main>
+    );
+  }
+
   return (
-    <main className="flex flex-col items-center justify-center min-h-screen bg-black text-white p-6">
-      <div className="w-full max-w-xl bg-white/10 backdrop-blur-md rounded-2xl p-6 shadow-2xl border border-white/20">
-        
-        {/* Header/Status */}
-        <div className="flex justify-between items-center mb-6 border-b border-white/20 pb-3">
-          <a href="/" className="text-gray-400 hover:text-[#FFD700] transition flex items-center text-sm">
-            <ArrowLeftIcon className="w-4 h-4 mr-1" /> Back to Home
-          </a>
-          <span className="text-sm font-semibold bg-white/20 px-3 py-1 rounded-full">
-            {levelIndex + 1}: {level.title}
-          </span>
+    <main className="min-h-screen bg-black text-white p-6 flex items-center justify-center">
+      <div className="max-w-2xl w-full bg-[#071019] rounded-2xl border border-white/6 p-6 shadow-xl">
+        <div className="flex justify-between items-center mb-4">
+          <button onClick={goHome} className="text-xs text-white/60 hover:text-[#00FFFF]">← Back to Home</button>
+          <div className="text-sm text-white/60">Level {playerLevel + 1}: <span className="text-[#FFD700]">{levelConfig.title}</span></div>
         </div>
 
-        {/* Timer & Question Progress */}
-        <div className="flex justify-between items-center mb-6">
-            <span className="text-gray-400 text-sm">
-                Question {qIndex + 1} of {level.questions.length}
-            </span>
-            <span className="text-[#FFD700] font-bold text-lg flex items-center">
-                <TimerIcon className="w-5 h-5 mr-1" /> {timeLeft}s
-            </span>
+        <div className="flex items-center justify-between mb-4">
+          <div className="text-sm text-white/70">Question {qIndex + 1} / {sessionQuestions.length}</div>
+          <div className="text-sm text-[#00FFFF] font-semibold">⏱ {timeLeft}s</div>
         </div>
-        
-        {/* Question */}
-        <h2 className="text-2xl font-bold mb-8 text-center">{currentQuestion?.question}</h2>
 
-        {/* Options */}
-        <div className="space-y-4">
-          {currentQuestion?.options.map((option, i) => {
-            const isCorrect = option === currentQuestion.answer;
-            const isSelected = option === selectedOption;
+        <h3 className="text-xl font-bold mb-6 text-center">{current.question}</h3>
 
-            let colorClass = "bg-white/10 hover:bg-white/20 ring-1 ring-white/10";
-            let icon = null;
+        <div className="grid gap-3">
+          {current.options.map((opt, idx) => {
+            const isCorrect = showFeedback && opt === current.answer;
+            const isSelectedWrong = showFeedback && selected === opt && opt !== current.answer;
 
-            if (showFeedback) {
-              if (isSelected && !isCorrect) {
-                colorClass = "bg-red-500/60 ring-2 ring-red-400";
-                icon = <XCircleIcon className="w-5 h-5" />;
-              } else if (isCorrect) {
-                colorClass = "bg-green-500/60 ring-2 ring-green-400";
-                icon = <CheckCircleIcon className="w-5 h-5" />;
-              } else {
-                // Dim unselected incorrect answers
-                colorClass = "bg-white/5 opacity-50"; 
-              }
-            }
+            let cls = "bg-white/6 hover:bg-white/10 text-left px-4 py-3 rounded-xl transition flex justify-between items-center";
+            if (isCorrect) cls = "bg-green-600/60 text-white px-4 py-3 rounded-xl flex justify-between items-center";
+            if (isSelectedWrong) cls = "bg-red-600/60 text-white px-4 py-3 rounded-xl flex justify-between items-center";
 
             return (
               <button
-                key={i}
+                key={idx}
                 disabled={showFeedback}
-                onClick={() => handleAnswer(option)}
-                className={`w-full text-left px-4 py-3 rounded-xl transition-all duration-300 flex items-center justify-between ${colorClass} disabled:cursor-not-allowed`}
+                onClick={() => submitAnswer(opt)}
+                className={cls}
               >
-                {option}
-                {showFeedback && icon}
+                <span>{opt}</span>
+                {showFeedback && (isCorrect ? <span className="text-white">✓</span> : isSelectedWrong ? <span className="text-white">✕</span> : null)}
               </button>
             );
           })}
         </div>
 
-        {/* Feedback */}
         {showFeedback && (
-          <p className={`text-center text-sm mt-6 font-semibold rounded-lg p-3 ${feedbackText.startsWith('✅') ? 'bg-green-900/40 text-green-300' : 'bg-red-900/40 text-red-300'}`}>
+          <div className={`mt-5 p-3 rounded-lg text-center ${feedbackText.startsWith("✅") ? "bg-[#003322]/60 text-[#00FFBB]" : "bg-[#330000]/60 text-[#FFB2B2]"}`}>
             {feedbackText}
-          </p>
+          </div>
         )}
       </div>
     </main>
