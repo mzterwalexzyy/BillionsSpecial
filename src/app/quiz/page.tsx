@@ -1,61 +1,180 @@
 // src/app/quiz/page.tsx
 "use client";
-
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { LEVELS, Question, LevelPool } from "@/lib/questions";
+import { saveProgress, addLeaderboardPoints, getOrCreateUser } from "@/lib/api";
 import { motion, AnimatePresence } from "framer-motion";
+import logo1 from "@/public/logos/billions_logo1.png";
+import logo2 from "@/public/logos/billions_logo2.png";
+import logo3 from "@/public/logos/billions_logo3.png";
+import logo4 from "@/public/logos/billions_logo4.png";
+import logo5 from "@/public/logos/billions_logo5.png";
+import logo6 from "@/public/logos/billions_logo6.png";
+import cyphPfp from "@/public/logos/cyph.jpg";
+import billionsPfp from "@/public/logos/billions_logo7.png";
 
-/* ---------- Small confetti using framer-motion ---------- */
+// -----------------
+// Floating Logo
+// -----------------
+function FloatingLogo({
+  src,
+  size = 80,
+  xStart = 0,
+  yStart = 0,
+  duration = 12,
+}: {
+  src: string;
+  size?: number;
+  xStart?: number;
+  yStart?: number;
+  duration?: number;
+}) {
+  const xEnd = xStart + (Math.random() * 200 - 100);
+  const yEnd = yStart + (Math.random() * 200 - 100);
+  const rotateEnd = Math.random() * 360;
 
-function FramerMotionConfetti({ active }: { active: boolean }) {
-  // create 24 pieces with random positions/directions
-  const pieces = Array.from({ length: 24 }).map((_, i) => {
-    const angle = Math.random() * Math.PI * 2;
-    const distance = 120 + Math.random() * 160;
-    const rotate = (Math.random() - 0.5) * 720;
-    const delay = Math.random() * 0.35;
-    const colorPool = ["#FFD700", "#00FFFF", "#7AF3FF", "#00FF99", "#BBD8FF"];
-    const color = colorPool[i % colorPool.length];
-    return { id: i, angle, distance, rotate, delay, color };
-  });
+  return (
+    <motion.img
+      src={src}
+      alt="Billions Logo"
+      className="absolute"
+      style={{ width: size, height: size, top: yStart, left: xStart, opacity: 0.3 }}
+      animate={{ x: [0, xEnd], y: [0, yEnd], rotate: [0, rotateEnd] }}
+      transition={{
+        duration,
+        repeat: Infinity,
+        repeatType: "mirror",
+        ease: "easeInOut",
+      }}
+    />
+  );
+}
+
+// -----------------
+// Floating Logos Container
+// -----------------
+function FloatingLogosContainer() {
+  const logos = [logo1.src, logo2.src, logo3.src, logo4.src, logo5.src, logo6.src];
+
+  const [positions] = useState(() =>
+    logos.map(() => ({
+      size: 40 + Math.random() * 60,
+      xStart: Math.random() * 1000,
+      yStart: Math.random() * 600,
+      duration: 8 + Math.random() * 8,
+      xEnd: Math.random() * 200 - 100,
+      yEnd: Math.random() * 200 - 100,
+      rotateEnd: Math.random() * 360,
+    }))
+  );
+
+  return (
+    <>
+      {positions.map((p, i) => (
+        <motion.img
+          key={i}
+          src={logos[i]}
+          alt="Billions Logo"
+          className="absolute"
+          style={{ width: p.size, height: p.size, top: p.yStart, left: p.xStart, opacity: 0.3 }}
+          animate={{ x: p.xEnd, y: p.yEnd, rotate: p.rotateEnd }}
+          transition={{ duration: p.duration, repeat: Infinity, repeatType: "mirror", ease: "easeInOut" }}
+        />
+      ))}
+    </>
+  );
+}
+
+
+
+// -----------------
+// QuestionBox.tsx
+function QuestionBox({ children, questionId }: { children: React.ReactNode; questionId: number }) {
+  const logos = [logo1.src, logo2.src, logo3.src, logo4.src, logo5.src, logo6.src];
+  const [bgLogo, setBgLogo] = useState<string>(logos[0]);
+
+  useEffect(() => {
+    // Only pick a new logo when questionId changes
+    const chosen = logos[Math.floor(Math.random() * logos.length)];
+    setBgLogo(chosen);
+  }, [questionId]);
+
+  return (
+    <div className="relative max-w-2xl w-full rounded-2xl p-6 border border-white/6 shadow-xl bg-[#071019] overflow-hidden">
+      <img src={bgLogo} alt="" className="absolute inset-0 w-full h-full object-contain opacity-10 pointer-events-none" />
+      <div className="relative z-10">{children}</div>
+    </div>
+  );
+}
+
+
+// -----------------
+// Confetti
+// -----------------
+function Confetti({ active }: { active: boolean }) {
+  const [bursts, setBursts] = useState<number[]>([]);
+
+  useEffect(() => {
+    if (!active) return;
+    let count = 0;
+    const interval = setInterval(() => {
+      setBursts((b) => [...b, count]);
+      count++;
+      if (count >= 5) clearInterval(interval); // more bursts for bigger effect
+    }, 200);
+    return () => clearInterval(interval);
+  }, [active]);
+
+  const renderPieces = (burstId: number) =>
+    Array.from({ length: 40 }).map((_, i) => {
+      const angle = Math.random() * Math.PI * 2;
+      const dist = 300 + Math.random() * 300; // spread farther
+      const delay = Math.random() * 0.25;
+      const colorPool = ["#FFD700", "#00FFFF", "#7AF3FF", "#00FF99", "#BBD8FF", "#FF69B4", "#FF4500"];
+      return { id: `${burstId}-${i}`, angle, dist, delay, color: colorPool[i % colorPool.length] };
+    });
 
   return (
     <AnimatePresence>
-      {active && (
-        <div className="pointer-events-none fixed inset-0 z-50 flex items-start justify-center">
-          <div className="relative w-full h-full">
-            {pieces.map((p) => (
+      {active &&
+        bursts.map((b) => (
+          <div key={b} className="pointer-events-none fixed inset-0 z-50 overflow-visible">
+            {renderPieces(b).map((p) => (
               <motion.div
                 key={p.id}
-                initial={{ opacity: 0, y: -20, x: 0, rotate: 0, scale: 0.8 }}
+                initial={{ opacity: 0, y: 0, x: 0, rotate: 0, scale: 0.8 }}
                 animate={{
-                  opacity: [1, 1, 0],
-                  x: Math.cos(p.angle) * p.distance,
-                  y: Math.sin(p.angle) * p.distance,
-                  rotate: p.rotate,
-                  scale: [1, 0.9, 0.7],
+                  opacity: [1, 0.9, 0],
+                  x: Math.cos(p.angle) * p.dist,
+                  y: Math.sin(p.angle) * p.dist,
+                  rotate: (Math.random() - 0.5) * 1080,
+                  scale: [1, 0.8, 0.5],
                 }}
                 exit={{ opacity: 0 }}
-                transition={{ duration: 1.1, delay: p.delay, ease: "easeOut" }}
-                className="absolute left-1/2 top-1/4"
+                transition={{ duration: 2, delay: p.delay, ease: "easeOut" }}
                 style={{
                   background: p.color,
-                  width: 10 + (p.id % 3) * 5,
-                  height: 6 + (p.id % 2) * 6,
-                  borderRadius: 2,
-                  boxShadow: `0 6px 18px ${p.color}33`,
+                  width: 12 + (p.id.length % 4) * 6,
+                  height: 6 + (p.id.length % 3) * 6,
+                  borderRadius: 3,
+                  boxShadow: `${p.color}99 0 8px 20px`,
+                  position: "absolute",
+                  left: "50%",
+                  top: "50%", // start from center of the screen
                 }}
               />
             ))}
           </div>
-        </div>
-      )}
+        ))}
     </AnimatePresence>
   );
 }
 
-/* ---------- Helper: pickRandom (unchanged) ---------- */
+
+// -----------------
+// Utilities
+// -----------------
 function pickRandom<T>(arr: T[], n: number) {
   const a = arr.slice();
   for (let i = a.length - 1; i > 0; i--) {
@@ -65,75 +184,47 @@ function pickRandom<T>(arr: T[], n: number) {
   return a.slice(0, n);
 }
 
-/* ---------- Leaderboard local push helper ---------- */
-function pushToLocalLeaderboard(username: string, levelTitle: string, score: number, total: number) {
-  try {
-    const raw = localStorage.getItem("bna_leaderboard") || "[]";
-    const list = JSON.parse(raw) as any[];
-    const entry = {
-      username,
-      level: levelTitle,
-      score,
-      total,
-      date: new Date().toISOString(),
-    };
-    list.push(entry);
-    // keep top 100
-    localStorage.setItem("bna_leaderboard", JSON.stringify(list.slice(-100)));
-  } catch (e) {
-    console.error("leaderboard push failed", e);
-  }
+function pointsForLevel(levelIndex: number, correctCount: number) {
+  if (levelIndex === 0) return correctCount * 2;
+  if (levelIndex === 1) return correctCount * 5;
+  return correctCount;
 }
 
-/* ---------- Optional: POST to API stub if exists (non-blocking) ---------- */
-async function postToServerLeaderboard(entry: { username: string; level: string; score: number; total: number }) {
-  try {
-    await fetch("/api/leaderboard/submit", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(entry),
-    });
-  } catch (e) {
-    // ignore network errors (server might not exist yet)
-    console.debug("server leaderboard post failed (expected if no backend):", e);
-  }
-}
-
-/* ---------- Main QuizPage (based on previous logic) ---------- */
+// -----------------
+// Main Quiz Page
+// -----------------
 export default function QuizPage() {
   const router = useRouter();
   const [username, setUsername] = useState<string | null>(null);
+  const [userId, setUserId] = useState<string | null>(null);
   const [playerLevel, setPlayerLevel] = useState<number>(0);
-
-  // session-level data
-  const [sessionQuestions, setSessionQuestions] = useState<Question[]>([]);
+  const [sessionQs, setSessionQs] = useState<Question[]>([]);
   const [qIndex, setQIndex] = useState(0);
-  const [score, setScore] = useState(0);
+  const [correctCount, setCorrectCount] = useState(0);
 
-  // feedback/timer UI
   const [selected, setSelected] = useState<string | null>(null);
   const [showFeedback, setShowFeedback] = useState(false);
   const [feedbackText, setFeedbackText] = useState("");
   const [timeLeft, setTimeLeft] = useState(10);
-
-  // level summary / overlay
+  const [showIntro, setShowIntro] = useState(true);
   const [showSummary, setShowSummary] = useState(false);
   const [passed, setPassed] = useState(false);
-
-  // confetti control
   const [confettiActive, setConfettiActive] = useState(false);
+  const [completedAll, setCompletedAll] = useState(false);
 
-  // current level config
+  // Feedback text
+  const [rating, setRating] = useState<number>(0);
+  const [feedback, setFeedback] = useState("");
+
   const levelConfig = useMemo<LevelPool>(() => LEVELS[playerLevel], [playerLevel]);
 
-  // load username + progress
+  // --- Load user ---
   useEffect(() => {
     const u = localStorage.getItem("bna_username");
-    if (!u) {
-      router.push("/login");
-      return;
-    }
+    const uid = localStorage.getItem("bna_user_id");
+    if (!u) return router.push("/login");
     setUsername(u);
+    setUserId(uid || null);
 
     const progressKey = `bna_progress_${u}`;
     const raw = localStorage.getItem(progressKey);
@@ -145,238 +236,352 @@ export default function QuizPage() {
         setPlayerLevel(0);
       }
     } else {
-      localStorage.setItem(progressKey, JSON.stringify({ levelIndex: 0 }));
+      localStorage.setItem(progressKey, JSON.stringify({ levelIndex: 0, points: 0 }));
       setPlayerLevel(0);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [router]);
 
-  // build / load session questions
+  // --- Load session questions ---
   useEffect(() => {
-    if (playerLevel == null) return;
     if (!username) return;
-
-    const sessKeyBase = `bna_session_${username}_level_${playerLevel}`;
-    const stored = sessionStorage.getItem(sessKeyBase);
+    const sessKey = `bna_session_${username}_level_${playerLevel}`;
+    const stored = sessionStorage.getItem(sessKey);
     if (stored) {
       try {
-        const parsed: Question[] = JSON.parse(stored);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          setSessionQuestions(parsed);
-          setQIndex(parseInt(sessionStorage.getItem(`${sessKeyBase}_index`) || "0", 10) || 0);
-          setScore(parseInt(sessionStorage.getItem(`${sessKeyBase}_score`) || "0", 10) || 0);
-          setTimeLeft(levelConfig?.timePerQuestion ?? 10);
+        const parsed = JSON.parse(stored) as Question[];
+        if (parsed.length) {
+          setSessionQs(parsed);
+          setQIndex(parseInt(sessionStorage.getItem(`${sessKey}_index`) || "0", 10) || 0);
+          setCorrectCount(parseInt(sessionStorage.getItem(`${sessKey}_correct`) || "0", 10) || 0);
+          setTimeLeft(levelConfig.timePerQuestion);
           return;
         }
       } catch {}
     }
-
     const chosen = pickRandom(levelConfig.pool, levelConfig.perSession);
-    sessionStorage.setItem(sessKeyBase, JSON.stringify(chosen));
-    sessionStorage.setItem(`${sessKeyBase}_index`, "0");
-    sessionStorage.setItem(`${sessKeyBase}_score`, "0");
-    setSessionQuestions(chosen);
+    sessionStorage.setItem(sessKey, JSON.stringify(chosen));
+    sessionStorage.setItem(`${sessKey}_index`, "0");
+    sessionStorage.setItem(`${sessKey}_correct`, "0");
+    setSessionQs(chosen);
     setQIndex(0);
-    setScore(0);
-    setTimeLeft(levelConfig?.timePerQuestion ?? 10);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [playerLevel, username]);
+    setCorrectCount(0);
+    setTimeLeft(levelConfig.timePerQuestion);
+  }, [playerLevel, username, levelConfig]);
 
-  // Timer effect
+  // --- Timer ---
   useEffect(() => {
-    if (!sessionQuestions.length) return;
-    if (showFeedback || showSummary) return;
+    if (!sessionQs.length || showFeedback || showSummary || showIntro) return;
+    if (qIndex >= sessionQs.length) return;
     if (timeLeft <= 0) {
-      submitAnswer(null, true);
+      handleSubmit(null, true);
       return;
     }
     const t = setTimeout(() => setTimeLeft((s) => s - 1), 1000);
     return () => clearTimeout(t);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [timeLeft, showFeedback, showSummary, qIndex, sessionQuestions.length]);
+  }, [timeLeft, showFeedback, showSummary, showIntro, qIndex, sessionQs.length]);
 
-  // submitAnswer
-  const submitAnswer = (option: string | null, timedOut = false) => {
-    if (!sessionQuestions.length) return;
-    if (showFeedback) return;
-
-    const current = sessionQuestions[qIndex];
-    const isCorrect = option !== null && option === current.answer;
-    const newScore = isCorrect ? score + 1 : score;
-    setScore(newScore);
+  // --- Handle answer ---
+  const handleSubmit = async (option: string | null, timedOut = false) => {
+    if (!sessionQs.length || showFeedback) return;
+    const curr = sessionQs[qIndex];
+    const isCorrect = option !== null && option === curr.answer;
+    const newCorrect = isCorrect ? correctCount + 1 : correctCount;
+    setCorrectCount(newCorrect);
     setSelected(option);
 
     if (isCorrect) setFeedbackText("✅ Correct — nice one!");
-    else if (timedOut) setFeedbackText(`⏰ Time’s up — correct: ${current.answer}`);
-    else setFeedbackText(`❌ Wrong — correct: ${current.answer}`);
+    else if (timedOut) setFeedbackText(`⏰ Time's up — correct: ${curr.answer}`);
+    else setFeedbackText(`❌ Wrong — correct: ${curr.answer}`);
 
     setShowFeedback(true);
 
-    // persist
-    const sessKeyBase = `bna_session_${username ?? "anon"}_level_${playerLevel}`;
-    sessionStorage.setItem(`${sessKeyBase}_index`, String(qIndex));
-    sessionStorage.setItem(`${sessKeyBase}_score`, String(newScore));
+    const sessKey = `bna_session_${username}_level_${playerLevel}`;
+    sessionStorage.setItem(`${sessKey}_index`, String(qIndex));
+    sessionStorage.setItem(`${sessKey}_correct`, String(newCorrect));
 
-    setTimeout(() => {
+    setTimeout(async () => {
       setShowFeedback(false);
       setSelected(null);
-      const next = qIndex + 1;
 
-      if (next < sessionQuestions.length) {
+      const next = qIndex + 1;
+      if (next < sessionQs.length) {
         setQIndex(next);
-        sessionStorage.setItem(`${sessKeyBase}_index`, String(next));
+        sessionStorage.setItem(`${sessKey}_index`, String(next));
         setTimeLeft(levelConfig.timePerQuestion);
       } else {
-        // finished level
-        const total = sessionQuestions.length;
-        const percent = (newScore / total) * 100;
+        // Level end
+        sessionStorage.setItem(`${sessKey}_index`, String(sessionQs.length));
+        const total = sessionQs.length;
+        const percent = (newCorrect / total) * 100;
         const didPass = percent >= levelConfig.passMark;
         setPassed(didPass);
         setShowSummary(true);
 
-        if (didPass) {
-          // show confetti and record leaderboard entry
-          setConfettiActive(true);
-          setTimeout(() => setConfettiActive(false), 1600);
+        const pointsEarned = pointsForLevel(playerLevel, newCorrect);
 
-          if (username) {
-            pushToLocalLeaderboard(username, levelConfig.title, newScore, total);
-            postToServerLeaderboard({ username, level: levelConfig.title, score: newScore, total }).catch(() => {});
-            // advance locally
-            const progressKey = `bna_progress_${username}`;
-            localStorage.setItem(progressKey, JSON.stringify({ levelIndex: Math.min(playerLevel + 1, LEVELS.length - 1) }));
+        try {
+          let uid = userId ?? localStorage.getItem("bna_user_id");
+          if (!uid && username) {
+            const created = await getOrCreateUser(username);
+            if (created?.id) {
+              localStorage.setItem("bna_user_id", created.id);
+              setUserId(created.id);
+              uid = created.id;
+            }
           }
+          if (uid) {
+            await saveProgress({ user_id: uid, level: playerLevel, score: newCorrect, passed: didPass, current_question: next });
+            if (didPass) {
+              await addLeaderboardPoints({ user_id: uid, points: pointsEarned, level: playerLevel });
+              setConfettiActive(true);
+              setTimeout(() => setConfettiActive(false), 1600);
+            }
+          }
+        } catch (err) { console.warn("Supabase save failed", err); }
+
+        if (username) {
+          const progKey = `bna_progress_${username}`;
+          const raw = localStorage.getItem(progKey);
+          let existing = { levelIndex: playerLevel, points: 0 };
+          if (raw) {
+            try { existing = JSON.parse(raw); } catch {}
+          }
+          existing.points = (existing.points || 0) + pointsEarned;
+          existing.levelIndex = didPass ? Math.min(playerLevel + 1, LEVELS.length - 1) : playerLevel;
+          localStorage.setItem(progKey, JSON.stringify(existing));
+
+          if (playerLevel + 1 >= LEVELS.length && didPass) setCompletedAll(true);
         }
       }
     }, 1400);
   };
 
-  // retry level (reshuffle)
-  const retryLevel = () => {
+  // --- Start/Retry/Next ---
+  const startLevel = () => {
     if (!username) return;
-    const sessKeyBase = `bna_session_${username}_level_${playerLevel}`;
+    const sessKey = `bna_session_${username}_level_${playerLevel}`;
     const chosen = pickRandom(levelConfig.pool, levelConfig.perSession);
-    sessionStorage.setItem(sessKeyBase, JSON.stringify(chosen));
-    sessionStorage.setItem(`${sessKeyBase}_index`, "0");
-    sessionStorage.setItem(`${sessKeyBase}_score`, "0");
-    setSessionQuestions(chosen);
+    sessionStorage.setItem(sessKey, JSON.stringify(chosen));
+    sessionStorage.setItem(`${sessKey}_index`, "0");
+    sessionStorage.setItem(`${sessKey}_correct`, "0");
+    setSessionQs(chosen);
     setQIndex(0);
-    setScore(0);
+    setCorrectCount(0);
+    setShowIntro(false);
     setShowSummary(false);
     setPassed(false);
     setTimeLeft(levelConfig.timePerQuestion);
   };
-
-  // proceed to next level
-  const proceed = () => {
-    const next = Math.min(playerLevel + 1, LEVELS.length - 1);
-    setPlayerLevel(next);
+  const retryLevel = () => startLevel();
+  const proceedAfterPass = () => {
+    const progKey = `bna_progress_${username}`;
+    const raw = localStorage.getItem(progKey);
+    let nextIndex = playerLevel;
+    if (raw) { try { const parsed = JSON.parse(raw); nextIndex = parsed.levelIndex ?? playerLevel; } catch {} }
+    setPlayerLevel(nextIndex);
+    setShowIntro(true);
     setShowSummary(false);
     setPassed(false);
-    setSessionQuestions([]); // effect will rebuild
+    setCompletedAll(false);
+    setSessionQs([]);
   };
-
-  // go home
+  const restartAll = async () => {
+    if (userId) { try { await fetch("/api/reset_user", { method: "POST", body: JSON.stringify({ user_id: userId }) }); } catch {} }
+    if (username) localStorage.setItem(`bna_progress_${username}`, JSON.stringify({ levelIndex: 0, points: 0 }));
+    for (let i = 0; i < LEVELS.length; i++) {
+      sessionStorage.removeItem(`bna_session_${username}_level_${i}`);
+      sessionStorage.removeItem(`bna_session_${username}_level_${i}_index`);
+      sessionStorage.removeItem(`bna_session_${username}_level_${i}_correct`);
+    }
+    setPlayerLevel(0);
+    router.push("/home");
+  };
   const goHome = () => router.push("/home");
 
-  if (!username) {
+  // -----------------
+  // RENDER
+  // -----------------
+  if (showIntro) {
     return (
-      <main className="min-h-screen bg-black text-white flex items-center justify-center p-6">
-        <div className="max-w-md w-full bg-[#071019] rounded-2xl p-6 text-center">Loading session...</div>
-      </main>
-    );
-  }
-
-  // summary screen
-  if (showSummary) {
-    const total = sessionQuestions.length || levelConfig.perSession;
-    const percent = Math.round((score / Math.max(1, total)) * 100);
-    return (
-      <main className="min-h-screen bg-black text-white p-6 flex items-center justify-center">
-        <FramerMotionConfetti active={confettiActive} />
-        <div className="max-w-lg w-full bg-[#071019] rounded-2xl border border-white/6 p-8 text-center shadow-lg">
-          <h2 className={`text-2xl font-bold mb-3 ${passed ? "text-[#00FFFF]" : "text-red-400"}`}>
-            {passed ? "Level Cleared 🎉" : "Almost there"}
-          </h2>
-          <p className="mb-4">You scored <span className="text-[#FFD700] font-bold">{score}</span> / {total} ({percent}%)</p>
-
-          {!passed ? (
-            <>
-              <p className="text-white/70 mb-6">You’ve done your part, but you can do better 💪</p>
-
-              <div className="flex flex-col items-center gap-3">
-                <a href="https://billions.network/" target="_blank" rel="noreferrer" className="w-full text-center px-5 py-3 bg-[#FFD700] text-black rounded-lg font-semibold hover:bg-yellow-400 transition">
-                  📘 Read Docs
-                </a>
-
-                <button onClick={retryLevel} className="w-full px-5 py-3 border border-white/10 rounded-lg hover:bg-white/6 transition">
-                  🔁 Retry Level
-                </button>
-
-                <button onClick={goHome} className="mt-3 text-xs text-white/50">← Back to Home</button>
-              </div>
-            </>
-          ) : (
-            <>
-              <p className="text-white/70 mb-6">Nice job! You're ready for the next challenge.</p>
-              {playerLevel + 1 < LEVELS.length ? (
-                <button onClick={proceed} className="w-full px-5 py-3 bg-[#00FFFF] text-black rounded-lg font-semibold hover:opacity-95">
-                  Proceed to {LEVELS[playerLevel + 1].title}
-                </button>
-              ) : (
-                <p className="text-[#FFD700] font-bold">You completed all levels — you're an OG!</p>
-              )}
-
-              <div className="mt-4">
-                <a href="/leaderboard" className="text-sm text-[#00FFFF] underline">View Leaderboard</a>
-              </div>
-            </>
-          )}
+      <main className="min-h-screen bg-black text-white p-6 flex items-center justify-center relative">
+        <FloatingLogosContainer />
+        <div className="max-w-2xl w-full bg-[#071019] rounded-2xl p-8 border border-white/6 shadow-lg text-center">
+          <h2 className="text-2xl font-bold mb-4" style={{ color: "#FFD700" }}>{LEVELS[playerLevel].title}</h2>
+          <p className="text-sm text-white/70 mb-2">This level has {levelConfig.perSession} beginner friendly questions.</p>
+          <p className="text-sm text-white/70 mb-6">Need at least {levelConfig.passMark}% to advance. You have {levelConfig.timePerQuestion}s per question.</p>
+          <button onClick={startLevel} className="px-6 py-3 bg-[#00FFFF] text-black rounded-xl font-bold">Start Level</button>
+          <div className="mt-6">
+            <button onClick={goHome} className="text-xs text-white/50 underline">← Back to Home</button>
+          </div>
         </div>
       </main>
     );
   }
 
-  const current = sessionQuestions[qIndex];
-  if (!current) {
-    return (
-      <main className="min-h-screen bg-black text-white flex items-center justify-center p-6">
-        <div className="max-w-md w-full bg-[#071019] rounded-2xl p-6 text-center">Preparing questions...</div>
+  // --------- Render Summary ---------
+if (showSummary) {
+  const total = sessionQs.length;
+  const percent = Math.round((correctCount / Math.max(1, total)) * 100);
+  const pointsEarned = pointsForLevel(playerLevel, correctCount);
+  const shareText = encodeURIComponent(
+    passed
+      ? `🏆 I just passed @billions_ntwk ${LEVELS[playerLevel].title} quiz! Scored ${percent}% and earned ${pointsEarned} points! Try it now!`
+      : `❌ I attempted @billions_ntwk ${LEVELS[playerLevel].title} quiz and scored ${percent}%. Can you do better?`
+  );
+  const shareUrl = `https://twitter.com/intent/tweet?text=${shareText}`;
+
+  return (
+    <main className="min-h-screen bg-black text-white p-6 flex items-center justify-center relative">
+      <FloatingLogosContainer />
+      <Confetti active={confettiActive} />
+      <div className="max-w-lg w-full bg-[#071019] rounded-2xl p-8 text-center border border-white/10 shadow-xl">
+        <h2 className="text-2xl font-bold text-[#FFD700] mb-3">
+          {completedAll
+            ? "🏆 You completed all levels — you're an OG!"
+            : passed
+            ? "✅ Level Passed!"
+            : "❌ Level Failed"}
+        </h2>
+        <p className="text-white/80 mb-2">Score: {percent}%</p>
+        <p className="text-white/80 mb-2">Points Earned: {pointsEarned}</p>
+
+        {/* ⭐ Only show stars & feedback for Level 2 */}
+        {playerLevel === 1 && (
+          <>
+            <div className="flex justify-center gap-2 mb-4">
+              {[1, 2, 3, 4, 5].map((n) => (
+                <button
+                  key={n}
+                  onClick={() => setRating(n)}
+                  className={`text-2xl transition ${n <= rating ? "text-[#FFD700]" : "text-white/50"}`}
+                >
+                  ★
+                </button>
+              ))}
+            </div>
+            <textarea
+              placeholder="Share feedback (optional)"
+              className="w-full p-3 text-sm text-black placeholder-gray-500 rounded-xl mb-4 focus:outline-none focus:ring-2 focus:ring-[#FFD700] bg-white"
+              value={feedback}
+              onChange={(e) => setFeedback(e.target.value)}
+            />
+          </>
+        )}
+            {playerLevel === 1 && ( // only show feedback submit for Level 2
+                <button
+                    onClick={() => {
+                    console.log("Feedback submitted:", feedback, "Rating:", rating);
+                // Optional: send feedback to backend here
+
+                // Clear feedback and rating
+                    setFeedback("");
+                    setRating(0);
+            }}
+                    className="w-full px-5 py-3 bg-[#00FFFF] text-black rounded-lg font-semibold hover:bg-[#7AF3FF] transition mb-4"
+                    >
+                     💬 Submit Feedback
+                </button>
+
+        )}
+
+        <div className="flex flex-col gap-3 mb-6">
+          <a
+            href={shareUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="w-full px-5 py-3 bg-[#00FFFF] text-black rounded-lg font-semibold hover:bg-[#7AF3FF] transition"
+          >
+            📤 Share on X
+          </a>
+          
+          {!completedAll && passed && (
+                <button
+                    onClick={proceedAfterPass}
+                    className="w-full px-5 py-3 bg-[#FFD700] text-black rounded-lg font-semibold hover:bg-yellow-400 transition"
+  >
+                    ➡ Next Level
+                </button>
+            )}
+
+          {!passed && playerLevel !== 0 && (
+            <button
+              onClick={retryLevel}
+              className="w-full px-5 py-3 bg-[#FFD700] text-black rounded-lg font-semibold hover:bg-yellow-400 transition"
+            >
+              🔁 Retry Level
+            </button>
+          )}
+          <button
+            onClick={restartAll}
+            className="w-full px-5 py-3 bg-white/10 text-white rounded-lg font-semibold hover:bg-white/20 transition"
+          >
+            ← Back to Home
+          </button>
+        </div>
+
+        {/* Footer X handles */}
+{completedAll && (
+  <>
+    <div className="mt-6 border-t border-white/20 pt-4 flex justify-center gap-6">
+      <a href="https://twitter.com/0x_cyph" target="_blank" rel="noreferrer" className="flex items-center gap-2 hover:opacity-80 transition">
+        <img src={cyphPfp.src} alt="Your PFP" className="w-10 h-10 rounded-full border-2 border-[#00FFFF]" />
+        <span className="text-white/80">@0x_cyph</span>
+      </a>
+      <a href="https://twitter.com/billions_ntwk" target="_blank" rel="noreferrer" className="flex items-center gap-2 hover:opacity-80 transition">
+        <img src={billionsPfp.src} alt="Billions PFP" className="w-10 h-10 rounded-full border-2 border-[#FFD700]" />
+        <span className="text-white/80">@billions_ntwk</span>
+      </a>
+    </div>
+
+    {/* More levels message below the handles */}
+    {playerLevel === 1 && (
+      <p className="mt-2 text-xs text-white/50 text-center">
+        More levels will be added and shared by the builder on X.
+      </p>
+    )}
+  </>
+
+             )}
+             
+        </div>
+
       </main>
     );
   }
 
+  // --------- Render Quiz ---------
+  const current = sessionQs[qIndex];
+  if (!current) return <div>Preparing questions...</div>;
+
   return (
-    <main className="min-h-screen bg-black text-white p-6 flex items-center justify-center">
-      <div className="max-w-2xl w-full bg-[#071019] rounded-2xl border border-white/6 p-6 shadow-xl">
+    <main className="min-h-screen bg-black text-white p-6 flex items-center justify-center relative">
+      <FloatingLogosContainer />
+
+      <Confetti active={confettiActive} />
+
+      <QuestionBox questionId={qIndex}>
         <div className="flex justify-between items-center mb-4">
           <button onClick={goHome} className="text-xs text-white/60 hover:text-[#00FFFF]">← Back to Home</button>
           <div className="text-sm text-white/60">Level {playerLevel + 1}: <span className="text-[#FFD700]">{levelConfig.title}</span></div>
         </div>
 
-        <div className="flex items-center justify-between mb-4">
-          <div className="text-sm text-white/70">Question {qIndex + 1} / {sessionQuestions.length}</div>
+        <div className="flex justify-between items-center mb-4">
+          <div className="text-sm text-white/70">Question {qIndex + 1} / {sessionQs.length}</div>
           <div className="text-sm text-[#00FFFF] font-semibold">⏱ {timeLeft}s</div>
         </div>
 
         <h3 className="text-xl font-bold mb-6 text-center">{current.question}</h3>
 
         <div className="grid gap-3">
-          {current.options.map((opt, idx) => {
+          {current.options.map((opt, i) => {
             const isCorrect = showFeedback && opt === current.answer;
             const isSelectedWrong = showFeedback && selected === opt && opt !== current.answer;
-
             let cls = "bg-white/6 hover:bg-white/10 text-left px-4 py-3 rounded-xl transition flex justify-between items-center";
             if (isCorrect) cls = "bg-green-600/60 text-white px-4 py-3 rounded-xl flex justify-between items-center";
             if (isSelectedWrong) cls = "bg-red-600/60 text-white px-4 py-3 rounded-xl flex justify-between items-center";
 
             return (
-              <button
-                key={idx}
-                disabled={showFeedback}
-                onClick={() => submitAnswer(opt)}
-                className={cls}
-              >
+              <button key={i} disabled={showFeedback} onClick={() => handleSubmit(opt)} className={cls}>
                 <span>{opt}</span>
                 {showFeedback && (isCorrect ? <span className="text-white">✓</span> : isSelectedWrong ? <span className="text-white">✕</span> : null)}
               </button>
@@ -389,7 +594,7 @@ export default function QuizPage() {
             {feedbackText}
           </div>
         )}
-      </div>
+      </QuestionBox>
     </main>
   );
 }
