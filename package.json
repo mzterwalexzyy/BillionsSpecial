@@ -3,10 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev --turbopack",
-    "build": "next build --turbopack",
-    "start": "next start",
-    "lint": "eslint"
+    "dev": "next dev",
+  "build": "next build --no-lint",
+  "start": "next start"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.76.1",
@@ -26,4 +25,5 @@
     "tailwindcss": "^4",
     "typescript": "^5"
   }
+
 }

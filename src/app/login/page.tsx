@@ -6,6 +6,7 @@ import { useState, useEffect } from "react";
 import { getOrCreateUser } from "@/lib/api";
 import { motion } from "framer-motion";
 import logoSrc from "@/public/logos/billions_logo.png"; // make sure you have this logo in /public
+import billionsPfp from "@/public/logos/billions_logo7.png";
 
 // Hook to get window size
 function useWindowSize() {
@@ -122,8 +123,13 @@ export default function LoginPage() {
 
       {/* Login box */}
       <div className="z-10 max-w-md w-full bg-[#071019]/90 border border-white/6 rounded-2xl p-8 shadow-lg text-white">
-        <h1 className="text-2xl font-bold mb-2" style={{ color: "#FFD700" }}>
-          Billions Quiz Arena
+        <h1 className="text-2xl font-bold mb-2 flex items-center gap-1" style={{ color: "#FFD700" }}>
+            <img 
+                src={billionsPfp.src} 
+                    alt="Billions Logo" 
+                    className="w-7 h-7 inline-block align-middle rounded-full" 
+            />
+                illions Quiz Arena
         </h1>
         <p className="text-sm text-white/70 mb-6">
           Sign in with your Discord username or continue as Guest.
