@@ -1,31 +1,50 @@
 import { NextRequest, NextResponse } from "next/server";
-import { registerUser } from "@/lib/db";
+import { supabase } from "@/lib/supabaseClient";
 
-// Define the expected structure of the request body
 interface AuthBody {
-  username: string;
-  pin: string;
-}
-
-// Define the expected structure of the successful user response
-// NOTE: Adjust the fields here to match what registerUser actually returns.
-interface UserResponse {
-  userId: string;
-  username: string;
-  token: string;
+  username?: string; // optional, since guest users may not send one
 }
 
 export async function POST(req: NextRequest) {
   try {
-    // Explicitly cast the request body to AuthBody
-    const { username, pin } = (await req.json()) as AuthBody;
-    
-    // Explicitly cast the return value of registerUser to unknown first, 
-    // then to UserResponse, to satisfy the strict TypeScript rules (TS2352).
-    const data = registerUser(username, pin) as unknown as UserResponse;
-    
-    return NextResponse.json(data);
-  } catch (err: unknown) { // Use 'unknown' for the catch block
+    const { username } = (await req.json()) as AuthBody;
+
+    // If no username provided → assign guest name
+    const finalUsername =
+      username && username.trim().length > 0
+        ? username.trim()
+        : `Guest_${Math.floor(Math.random() * 100000)}`;
+
+    // ✅ Check if username already exists
+    const { data: existingUser, error: fetchError } = await supabase
+      .from("users")
+      .select("*")
+      .eq("username", finalUsername)
+      .maybeSingle();
+
+    if (fetchError) throw fetchError;
+
+    if (existingUser) {
+      return NextResponse.json(
+        { error: "Username already taken" },
+        { status: 400 }
+      );
+    }
+
+    // ✅ Create new user
+    const { data: newUser, error: insertError } = await supabase
+      .from("users")
+      .insert([{ username: finalUsername }])
+      .select()
+      .single();
+
+    if (insertError) throw insertError;
+
+    return NextResponse.json({
+      message: `Welcome, ${newUser.username}! You’re in.`,
+      user: newUser,
+    });
+  } catch (err: unknown) {
     const errorMessage =
       err instanceof Error ? err.message : "An unknown error occurred";
     return NextResponse.json({ error: errorMessage }, { status: 400 });

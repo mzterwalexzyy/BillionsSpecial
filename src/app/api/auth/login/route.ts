@@ -1,33 +1,50 @@
 import { NextRequest, NextResponse } from "next/server";
-import { loginUser } from "@/lib/db";
-
-// Define the expected structure of the request body
-interface AuthBody {
-  username: string;
-  pin: string;
-}
-
-// Define the expected structure of the successful user response
-// NOTE: Adjust the fields here to match what loginUser actually returns.
-interface UserResponse {
-  userId: string;
-  username: string;
-  token: string;
-}
+import { supabase } from "@/lib/supabaseClient";
 
 export async function POST(req: NextRequest) {
   try {
-    // Explicitly cast the request body to AuthBody
-    const { username, pin } = (await req.json()) as AuthBody;
-    
-    // Explicitly cast the return value of loginUser to unknown first, 
-    // then to UserResponse, to satisfy the strict TypeScript rules (TS2352).
-    const data = loginUser(username, pin) as unknown as UserResponse;
-    
-    return NextResponse.json(data);
-  } catch (err: unknown) { // Use 'unknown' for the catch block
-    const errorMessage =
-      err instanceof Error ? err.message : "An unknown error occurred";
-    return NextResponse.json({ error: errorMessage }, { status: 400 });
+    const { discordName, guest } = await req.json();
+
+    let username = discordName;
+    let is_guest = false;
+
+    // If user chooses guest mode, generate random name
+    if (guest) {
+      const randomNum = Math.floor(1000 + Math.random() * 9000);
+      username = `Guest_${randomNum}`;
+      is_guest = true;
+    }
+
+    // Check if user already exists
+    const { data: existingUser } = await supabase
+      .from("users")
+      .select("*")
+      .eq("username", username)
+      .maybeSingle();
+
+    let user = existingUser;
+
+    // If not, create them
+    if (!user) {
+      const { data, error } = await supabase
+        .from("users")
+        .insert([{ username, is_guest }])
+        .select()
+        .single();
+
+      if (error) throw error;
+      user = data;
+    }
+
+    return NextResponse.json({
+      message: `Welcome ${user.is_guest ? "Guest" : user.username}!`,
+      user,
+    });
+  } catch (err: unknown) {
+    console.error("Login error:", err);
+    return NextResponse.json(
+      { error: "Login failed" },
+      { status: 400 }
+    );
   }
 }
