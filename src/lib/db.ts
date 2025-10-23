@@ -1,4 +1,10 @@
-export let users: any[] = [];
+// A lightweight in-memory database for users
+export interface User {
+  username: string;
+  pin: string;
+}
+
+export const users: User[] = [];
 
 export function registerUser(username: string, pin: string) {
   const exists = users.find((u) => u.username === username);

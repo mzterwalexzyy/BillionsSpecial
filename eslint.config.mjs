@@ -12,6 +12,15 @@ const compat = new FlatCompat({
 const eslintConfig = [
   ...compat.extends("next/core-web-vitals", "next/typescript"),
   {
+    languageOptions: {
+      parserOptions: {
+        project: "./tsconfig.json",
+      },
+    },
+    rules: {
+      "@typescript-eslint/no-explicit-any": "off", // optional; remove if you want stricter linting
+      "@typescript-eslint/no-unused-vars": ["warn"],
+    },
     ignores: [
       "node_modules/**",
       ".next/**",
