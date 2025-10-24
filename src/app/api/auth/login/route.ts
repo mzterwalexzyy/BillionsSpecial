@@ -1,50 +1,53 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabase } from "@/lib/supabaseClient";
 
+interface AuthBody {
+  username?: string; // optional — guest users may not send one
+}
+
 export async function POST(req: NextRequest) {
   try {
-    const { discordName, guest } = await req.json();
+    const { username } = (await req.json()) as AuthBody;
 
-    let username = discordName;
-    let is_guest = false;
+    // If no username provided → assign a guest name automatically
+    const finalUsername =
+      username && username.trim().length > 0
+        ? username.trim()
+        : `Guest_${Math.floor(Math.random() * 100000)}`;
 
-    // If user chooses guest mode, generate random name
-    if (guest) {
-      const randomNum = Math.floor(1000 + Math.random() * 9000);
-      username = `Guest_${randomNum}`;
-      is_guest = true;
-    }
-
-    // Check if user already exists
-    const { data: existingUser } = await supabase
+    // ✅ Try to find user by username
+    const { data: user, error: fetchError } = await supabase
       .from("users")
       .select("*")
-      .eq("username", username)
+      .eq("username", finalUsername)
       .maybeSingle();
 
-    let user = existingUser;
+    if (fetchError) throw fetchError;
 
-    // If not, create them
-    if (!user) {
-      const { data, error } = await supabase
-        .from("users")
-        .insert([{ username, is_guest }])
-        .select()
-        .single();
-
-      if (error) throw error;
-      user = data;
+    // ✅ If user exists → return them
+    if (user) {
+      return NextResponse.json({
+        message: `Welcome back, ${user.username}!`,
+        user,
+      });
     }
 
+    // ✅ Otherwise create a new guest user automatically
+    const { data: newUser, error: insertError } = await supabase
+      .from("users")
+      .insert([{ username: finalUsername }])
+      .select()
+      .single();
+
+    if (insertError) throw insertError;
+
     return NextResponse.json({
-      message: `Welcome ${user.is_guest ? "Guest" : user.username}!`,
-      user,
+      message: `Welcome, ${newUser.username}! You’re in.`,
+      user: newUser,
     });
   } catch (err: unknown) {
-    console.error("Login error:", err);
-    return NextResponse.json(
-      { error: "Login failed" },
-      { status: 400 }
-    );
+    const errorMessage =
+      err instanceof Error ? err.message : "An unknown error occurred";
+    return NextResponse.json({ error: errorMessage }, { status: 400 });
   }
 }

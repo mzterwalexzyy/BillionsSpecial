@@ -15,7 +15,7 @@ export async function POST(req: NextRequest) {
         ? username.trim()
         : `Guest_${Math.floor(Math.random() * 100000)}`;
 
-    // ✅ Check if username already exists
+    // ✅ Check if the user already exists
     const { data: existingUser, error: fetchError } = await supabase
       .from("users")
       .select("*")
@@ -24,14 +24,15 @@ export async function POST(req: NextRequest) {
 
     if (fetchError) throw fetchError;
 
+    // ✅ If user exists, return it
     if (existingUser) {
-      return NextResponse.json(
-        { error: "Username already taken" },
-        { status: 400 }
-      );
+      return NextResponse.json({
+        message: `Welcome back, ${existingUser.username}!`,
+        user: existingUser,
+      });
     }
 
-    // ✅ Create new user
+    // ✅ If not, create a new one
     const { data: newUser, error: insertError } = await supabase
       .from("users")
       .insert([{ username: finalUsername }])
