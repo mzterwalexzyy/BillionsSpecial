@@ -5,29 +5,47 @@ const resend = new Resend(process.env.RESEND_API_KEY);
 
 export async function POST(req: Request) {
   try {
-    const { username, rating, feedback } = await req.json();
+    const { username, rating, feedback, level } = await req.json();
 
-    if (!feedback) {
-      return NextResponse.json({ error: "Feedback message is required." }, { status: 400 });
+    if (!feedback && !rating) {
+      return NextResponse.json({ error: "Missing feedback or rating" }, { status: 400 });
     }
 
-    const emailData = {
-      from: "Billions Quiz <no-reply@billionsspecial.xyz>",
-      to: "feedback@billionsspecial.xyz", // 🔸 Change to your email
-      subject: `New Feedback from ${username || "Anonymous"}`,
-      text: `🧠 Quiz Feedback\n\nFrom: ${username || "Anonymous"}\nRating: ${rating ?? "N/A"}\n\nMessage:\n${feedback}`,
-    };
+    const to = process.env.TO_EMAIL;
+    const from = process.env.FROM_EMAIL || "noreply@on.resend.dev";
 
-    const result = await resend.emails.send(emailData);
-
-    if (result.error) {
-      console.error("Resend error:", result.error);
-      return NextResponse.json({ error: "Failed to send feedback email." }, { status: 500 });
+    if (!to || !process.env.RESEND_API_KEY) {
+      console.error("Missing RESEND_API_KEY or TO_EMAIL env vars");
+      return NextResponse.json({ error: "Server not configured" }, { status: 500 });
     }
 
-    return NextResponse.json({ success: true, message: "Feedback sent successfully!" });
+    const subject = `Billions Quiz Feedback — ${level || "General"}`;
+    const html = `
+      <div style="font-family: sans-serif; padding: 16px; background: #f9f9f9;">
+        <h2>📩 New Feedback Received</h2>
+        <p><strong>User:</strong> ${username || "Anonymous"}</p>
+        <p><strong>Level:</strong> ${level || "Unknown"}</p>
+        <p><strong>Rating:</strong> ${rating || "No rating"}</p>
+        <p><strong>Feedback:</strong></p>
+        <p style="background:#fff;padding:12px;border-radius:8px;">${feedback || "(no message)"}</p>
+      </div>
+    `;
+
+    const { data, error } = await resend.emails.send({
+      from,
+      to,
+      subject,
+      html,
+    });
+
+    if (error) {
+      console.error("Resend error:", error);
+      return NextResponse.json({ error: "Email send failed" }, { status: 500 });
+    }
+
+    return NextResponse.json({ success: true, data });
   } catch (err) {
-    console.error("Feedback send error:", err);
-    return NextResponse.json({ error: "An unexpected error occurred." }, { status: 500 });
+    console.error("Server error:", err);
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }
