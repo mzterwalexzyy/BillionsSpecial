@@ -1,3 +1,5 @@
+// src/app/layout.tsx
+
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
@@ -17,7 +19,7 @@ export const metadata: Metadata = {
   description:
     "Challenge your knowledge and climb the leaderboard in the Billions Quiz App!",
   icons: {
-    icon: "/billions-logo1.png", // ✅ points to public/billions-logo7.png
+    icon: "/billions_logo1.png",
   },
 };
 
@@ -28,10 +30,6 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <head>
-        {/* ✅ Optional: ensures browsers pick it up */}
-        <link rel="icon" href="/billions-logo7.png" />
-      </head>
       <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
         {children}
       </body>

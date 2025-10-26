@@ -423,12 +423,16 @@ if (showSummary) {
   const total = sessionQs.length;
   const percent = Math.round((correctCount / Math.max(1, total)) * 100);
   const pointsEarned = pointsForLevel(playerLevel, correctCount);
-  const shareText = encodeURIComponent(
-    passed
-      ? `🏆 I just passed @billions_ntwk ${LEVELS[playerLevel].title} quiz! Scored ${percent}% and earned ${pointsEarned} points! Try it now!`
-      : `❌ I attempted @billions_ntwk ${LEVELS[playerLevel].title} quiz and scored ${percent}%. Can you do better?`
-  );
-  const shareUrl = `https://twitter.com/intent/tweet?text=${shareText}`;
+  const siteUrl = "https://billions-special.vercel.app/";
+
+const shareText = encodeURIComponent(
+  passed
+    ? `🏆 I just passed @billions_ntwk ${LEVELS[playerLevel].title} quiz! Scored ${percent}% and earned ${pointsEarned} points! Try it yourself 👇\n${siteUrl}`
+    : `❌ I attempted @billions_ntwk ${LEVELS[playerLevel].title} quiz and scored ${percent}%. Think you can beat my score? 👇\n${siteUrl}`
+);
+
+const shareUrl = `https://twitter.com/intent/tweet?text=${shareText}`;
+
 
   return (
     <main className="min-h-screen bg-black text-white p-6 flex items-center justify-center relative">
@@ -467,22 +471,43 @@ if (showSummary) {
             />
           </>
         )}
-            {playerLevel === 1 && ( // only show feedback submit for Level 2
-                <button
-                    onClick={() => {
-                    console.log("Feedback submitted:", feedback, "Rating:", rating);
-                // Optional: send feedback to backend here
+            {playerLevel === 1 && (
+  <button
+    onClick={async () => {
+      if (!feedback && rating === 0) {
+        alert("Please add some feedback or a rating before submitting!");
+        return;
+      }
+      try {
+        const res = await fetch("/api/sendFeedback", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            username,
+            rating,
+            feedback,
+            level: LEVELS[playerLevel].title,
+          }),
+        });
 
-                // Clear feedback and rating
-                    setFeedback("");
-                    setRating(0);
-            }}
-                    className="w-full px-5 py-3 bg-[#00FFFF] text-black rounded-lg font-semibold hover:bg-[#7AF3FF] transition mb-4"
-                    >
-                     💬 Submit Feedback
-                </button>
+        if (res.ok) {
+          alert("✅ Feedback sent successfully!");
+          setFeedback("");
+          setRating(0);
+        } else {
+          alert("❌ Failed to send feedback. Please try again later.");
+        }
+      } catch (err) {
+        console.error("Error sending feedback:", err);
+        alert("⚠️ Network error — check your connection.");
+      }
+    }}
+    className="w-full px-5 py-3 bg-[#00FFFF] text-black rounded-lg font-semibold hover:bg-[#7AF3FF] transition mb-4"
+  >
+    💬 Submit Feedback
+  </button>
+)}
 
-        )}
 
         <div className="flex flex-col gap-3 mb-6">
           <a
