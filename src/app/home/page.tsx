@@ -2,12 +2,13 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { getLeaderboard, getUserStats, LeaderboardEntry } from "@/lib/api"; // Import LeaderboardEntry
+import Image from "next/image";
+import { getLeaderboard, getUserStats, LeaderboardEntry } from "@/lib/api";
 import { motion } from "framer-motion";
-import logoSrc from "@/public/logos/billions_logo.png"; // floating logos
+import logoSrc from "@/public/logos/billions_logo.png";
 
 interface UserStats {
-  points?: number; // Made optional as it's not returned by getUserStats in api.ts
+  points?: number;
   total_score: number;
   max_level: number;
   rank: number | null;
@@ -43,12 +44,10 @@ function FloatingLogo({
 }) {
   const xEnd = xStart + (Math.random() * 200 - 100);
   const yEnd = yStart + (Math.random() * 200 - 100);
+  const MotionImage = motion(Image);
 
-  // FIX: Added 'as any' to bypass the Next Image component check for a simple image tag 
-  // until the component is converted to use the proper Next.js <Image /> component.
-  // The original error was related to state, not this component, but this ensures safety.
   return (
-    <motion.img
+    <MotionImage
       src={src}
       alt="Billions Logo"
       className="absolute pointer-events-none"
@@ -60,6 +59,8 @@ function FloatingLogo({
         repeatType: "mirror",
         ease: "easeInOut",
       }}
+      width={size}
+      height={size}
     />
   );
 }
@@ -69,9 +70,7 @@ export default function HomePage() {
   const [username, setUsername] = useState<string | null>(null);
   const [userId, setUserId] = useState<string | null>(null);
   
-  // FIX: Explicitly type the leaderboard state
   const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]); 
-  
   const [userStats, setUserStats] = useState<UserStats | null>(null);
   const [loading, setLoading] = useState(true);
   const windowSize = useWindowSize();
@@ -95,7 +94,7 @@ export default function HomePage() {
 
   // Fetch leaderboard and user stats
   useEffect(() => {
-    if (!username) return;
+    if (!username || !userId) return;
 
     (async () => {
       setLoading(true);
@@ -103,13 +102,15 @@ export default function HomePage() {
         const lb = await getLeaderboard(10);
         setLeaderboard(lb || []);
 
-        if (userId) {
-          const stats = await getUserStats(userId);
-          // FIX: Explicitly cast the incoming stats object to UserStats
-          setUserStats(stats as UserStats); 
+        const stats = await getUserStats(userId);
+        if (stats) {
+          setUserStats(stats);
+        } else {
+          setUserStats(null);
         }
       } catch (err) {
         console.error("Error loading leaderboard or stats:", err);
+        setUserStats(null);
       } finally {
         setLoading(false);
       }
@@ -140,10 +141,8 @@ export default function HomePage() {
   const resetLevel = () => {
     if (!username) return;
     localStorage.setItem(`bna_progress_${username}`, JSON.stringify({ levelIndex: 0 }));
-    // FIX: Check if prev exists before spreading
-    setUserStats((prev) => prev && { ...prev, max_level: 0, total_score: 0, points: 0 });
-    // FIX: Replaced alert() with console.log() since alert() is forbidden
-    console.log("Your progress has been reset!"); 
+    setUserStats((prev) => (prev ? { ...prev, max_level: 0, total_score: 0, points: 0 } : null));
+    console.log("Your progress has been reset!");
   };
 
   return (
@@ -262,8 +261,7 @@ export default function HomePage() {
             <p className="text-sm text-white/60">No scores yet — be the first!</p>
           ) : (
             <ol className="space-y-2">
-              {leaderboard.map((row: LeaderboardEntry, i: number) => { // Explicitly type 'row'
-                // Safely access username from either the nested 'users' object or the fallback 'username' field
+              {leaderboard.map((row, i) => {
                 const name = row.users?.username ?? row.username ?? "Unknown Player"; 
                 return (
                   <li

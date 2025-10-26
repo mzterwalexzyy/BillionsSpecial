@@ -1,13 +1,27 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabase } from "@/lib/supabaseClient";
+import { z } from "zod";
 
-interface AuthBody {
-  username?: string; // optional — guest users may not send one
-}
+// Define a Zod schema for the request body
+const AuthBodySchema = z.object({
+  username: z.string().optional(),
+});
 
 export async function POST(req: NextRequest) {
   try {
-    const { username } = (await req.json()) as AuthBody;
+    const body = await req.json();
+
+    // Validate the request body with the schema
+    const result = AuthBodySchema.safeParse(body);
+
+    if (!result.success) {
+      return NextResponse.json(
+        { error: "Invalid request body" },
+        { status: 400 }
+      );
+    }
+
+    const { username } = result.data;
 
     // If no username provided → assign a guest name automatically
     const finalUsername =

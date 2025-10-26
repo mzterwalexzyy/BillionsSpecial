@@ -17,8 +17,8 @@ export interface LeaderboardEntry {
   user_id: string;
   total_score: number | null;
   max_level: number | null;
-  users?: LeaderboardUser | null; // When relational join works
-  username?: string; // Fallback
+  users?: LeaderboardUser | null;
+  username?: string;
 }
 
 interface UserStatsResult {
@@ -204,14 +204,14 @@ export async function getLeaderboard(limit = 10): Promise<LeaderboardEntry[]> {
         .in("id", userIds)
         .returns<UserRow[]>();
 
-      const userMap: Record<string, string> = {};
+      const userMap = new Map<string, string>();
       (users || []).forEach((u) => {
-        userMap[u.id] = u.username;
+        userMap.set(u.id, u.username);
       });
 
       return rows.map((r): LeaderboardEntry => ({
         ...r,
-        username: userMap[r.user_id] ?? "Unknown",
+        username: userMap.get(r.user_id) ?? "Unknown",
       }));
     }
 
