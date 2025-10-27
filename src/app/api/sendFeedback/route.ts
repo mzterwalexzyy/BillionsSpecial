@@ -19,33 +19,25 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Server not configured" }, { status: 500 });
     }
 
-    const subject = `Billions Quiz Feedback — ${level || "General"}`;
-    const html = `
-      <div style="font-family: sans-serif; padding: 16px; background: #f9f9f9;">
-        <h2>📩 New Feedback Received</h2>
-        <p><strong>User:</strong> ${username || "Anonymous"}</p>
-        <p><strong>Level:</strong> ${level || "Unknown"}</p>
-        <p><strong>Rating:</strong> ${rating || "No rating"}</p>
-        <p><strong>Feedback:</strong></p>
-        <p style="background:#fff;padding:12px;border-radius:8px;">${feedback || "(no message)"}</p>
-      </div>
-    `;
-
-    const { data, error } = await resend.emails.send({
+    await resend.emails.send({
       from,
       to,
-      subject,
-      html,
+      subject: `Billions Quiz Feedback — ${level || "General"}`,
+      html: `
+        <div style="font-family:sans-serif;padding:16px;background:#f9f9f9;">
+          <h2>📩 New Feedback Received</h2>
+          <p><strong>User:</strong> ${username || "Anonymous"}</p>
+          <p><strong>Level:</strong> ${level || "Unknown"}</p>
+          <p><strong>Rating:</strong> ${rating || "No rating"}</p>
+          <p><strong>Feedback:</strong></p>
+          <p style="background:#fff;padding:12px;border-radius:8px;">${feedback || "(no message)"}</p>
+        </div>
+      `,
     });
 
-    if (error) {
-      console.error("Resend error:", error);
-      return NextResponse.json({ error: "Email send failed" }, { status: 500 });
-    }
-
-    return NextResponse.json({ success: true, data });
-  } catch (err) {
+    return NextResponse.json({ success: true });
+  } catch (err: any) {
     console.error("Server error:", err);
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+    return NextResponse.json({ error: err.message || "Internal server error" }, { status: 500 });
   }
 }

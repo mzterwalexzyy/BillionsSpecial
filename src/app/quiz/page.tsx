@@ -86,8 +86,6 @@ function FloatingLogosContainer() {
   );
 }
 
-
-
 // -----------------
 // QuestionBox.tsx
 function QuestionBox({ children, questionId }: { children: React.ReactNode; questionId: number }) {
@@ -95,7 +93,6 @@ function QuestionBox({ children, questionId }: { children: React.ReactNode; ques
   const [bgLogo, setBgLogo] = useState<string>(logos[0]);
 
   useEffect(() => {
-    // Only pick a new logo when questionId changes
     const chosen = logos[Math.floor(Math.random() * logos.length)];
     setBgLogo(chosen);
   }, [questionId]);
@@ -107,7 +104,6 @@ function QuestionBox({ children, questionId }: { children: React.ReactNode; ques
     </div>
   );
 }
-
 
 // -----------------
 // Confetti
@@ -121,7 +117,7 @@ function Confetti({ active }: { active: boolean }) {
     const interval = setInterval(() => {
       setBursts((b) => [...b, count]);
       count++;
-      if (count >= 5) clearInterval(interval); // more bursts for bigger effect
+      if (count >= 5) clearInterval(interval);
     }, 200);
     return () => clearInterval(interval);
   }, [active]);
@@ -129,7 +125,7 @@ function Confetti({ active }: { active: boolean }) {
   const renderPieces = (burstId: number) =>
     Array.from({ length: 40 }).map((_, i) => {
       const angle = Math.random() * Math.PI * 2;
-      const dist = 300 + Math.random() * 300; // spread farther
+      const dist = 300 + Math.random() * 300;
       const delay = Math.random() * 0.25;
       const colorPool = ["#FFD700", "#00FFFF", "#7AF3FF", "#00FF99", "#BBD8FF", "#FF69B4", "#FF4500"];
       return { id: `${burstId}-${i}`, angle, dist, delay, color: colorPool[i % colorPool.length] };
@@ -161,7 +157,7 @@ function Confetti({ active }: { active: boolean }) {
                   boxShadow: `${p.color}99 0 8px 20px`,
                   position: "absolute",
                   left: "50%",
-                  top: "50%", // start from center of the screen
+                  top: "50%",
                 }}
               />
             ))}
@@ -170,7 +166,6 @@ function Confetti({ active }: { active: boolean }) {
     </AnimatePresence>
   );
 }
-
 
 // -----------------
 // Utilities
@@ -212,9 +207,10 @@ export default function QuizPage() {
   const [confettiActive, setConfettiActive] = useState(false);
   const [completedAll, setCompletedAll] = useState(false);
 
-  // Feedback text
+  // Feedback
   const [rating, setRating] = useState<number>(0);
   const [feedback, setFeedback] = useState("");
+  const [sending, setSending] = useState(false); // new state
 
   const levelConfig = useMemo<LevelPool>(() => LEVELS[playerLevel], [playerLevel]);
 
@@ -309,8 +305,6 @@ export default function QuizPage() {
         sessionStorage.setItem(`${sessKey}_index`, String(next));
         setTimeLeft(levelConfig.timePerQuestion);
       } else {
-        // Level end
-        sessionStorage.setItem(`${sessKey}_index`, String(sessionQs.length));
         const total = sessionQs.length;
         const percent = (newCorrect / total) * 100;
         const didPass = percent >= levelConfig.passMark;
@@ -398,9 +392,7 @@ export default function QuizPage() {
   };
   const goHome = () => router.push("/home");
 
-  // -----------------
-  // RENDER
-  // -----------------
+  // --------- RENDER: Intro, Quiz, Summary ---------
   if (showIntro) {
     return (
       <main className="min-h-screen bg-black text-white p-6 flex items-center justify-center relative">
@@ -419,157 +411,138 @@ export default function QuizPage() {
   }
 
   // --------- Render Summary ---------
-if (showSummary) {
-  const total = sessionQs.length;
-  const percent = Math.round((correctCount / Math.max(1, total)) * 100);
-  const pointsEarned = pointsForLevel(playerLevel, correctCount);
-  const siteUrl = "https://billions-special.vercel.app/";
+  if (showSummary) {
+    const total = sessionQs.length;
+    const percent = Math.round((correctCount / Math.max(1, total)) * 100);
+    const pointsEarned = pointsForLevel(playerLevel, correctCount);
+    const siteUrl = "https://billions-special.vercel.app/";
+    const shareText = encodeURIComponent(
+      passed
+        ? `🏆 I just passed @billions_ntwk ${LEVELS[playerLevel].title} quiz! Scored ${percent}% and earned ${pointsEarned} points! Try it yourself 👇\n${siteUrl}`
+        : `❌ I attempted @billions_ntwk ${LEVELS[playerLevel].title} quiz and scored ${percent}%. Think you can beat my score? 👇\n${siteUrl}`
+    );
+    const shareUrl = `https://twitter.com/intent/tweet?text=${shareText}`;
 
-const shareText = encodeURIComponent(
-  passed
-    ? `🏆 I just passed @billions_ntwk ${LEVELS[playerLevel].title} quiz! Scored ${percent}% and earned ${pointsEarned} points! Try it yourself 👇\n${siteUrl}`
-    : `❌ I attempted @billions_ntwk ${LEVELS[playerLevel].title} quiz and scored ${percent}%. Think you can beat my score? 👇\n${siteUrl}`
-);
+    return (
+      <main className="min-h-screen bg-black text-white p-6 flex items-center justify-center relative">
+        <FloatingLogosContainer />
+        <Confetti active={confettiActive} />
+        <div className="max-w-lg w-full bg-[#071019] rounded-2xl p-8 text-center border border-white/10 shadow-xl">
+          <h2 className="text-2xl font-bold text-[#FFD700] mb-3">
+            {completedAll
+              ? "🏆 You completed all levels — you're an OG!"
+              : passed
+              ? "✅ Level Passed!"
+              : "❌ Level Failed"}
+          </h2>
+          <p className="text-white/80 mb-2">Score: {percent}%</p>
+          <p className="text-white/80 mb-2">Points Earned: {pointsEarned}</p>
 
-const shareUrl = `https://twitter.com/intent/tweet?text=${shareText}`;
+          {/* ⭐ Feedback only for Level 2 */}
+          {playerLevel === 1 && (
+            <>
+              <div className="flex justify-center gap-2 mb-4">
+                {[1, 2, 3, 4, 5].map((n) => (
+                  <button
+                    key={n}
+                    onClick={() => setRating(n)}
+                    className={`text-2xl transition ${n <= rating ? "text-[#FFD700]" : "text-white/50"}`}
+                  >
+                    ★
+                  </button>
+                ))}
+              </div>
+              <textarea
+                placeholder="Share feedback (optional)"
+                className="w-full p-3 text-sm text-black placeholder-gray-500 rounded-xl mb-4 focus:outline-none focus:ring-2 focus:ring-[#FFD700] bg-white"
+                value={feedback}
+                onChange={(e) => setFeedback(e.target.value)}
+              />
+              <button
+                onClick={async () => {
+                  if (!feedback && rating === 0) {
+                    alert("Please add some feedback or a rating before submitting!");
+                    return;
+                  }
+                  if (sending) return;
+                  setSending(true);
+                  try {
+                    const res = await fetch("/api/sendFeedback", {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({ username, rating, feedback, level: LEVELS[playerLevel].title }),
+                    });
+                    const data = await res.json();
+                    if (res.ok) {
+                      alert("✅ Feedback sent successfully!");
+                      setFeedback("");
+                      setRating(0);
+                    } else {
+                      alert(`❌ Failed to send feedback: ${data.error || "Unknown error"}`);
+                    }
+                  } catch (err) {
+                    console.error("Error sending feedback:", err);
+                    alert("⚠️ Network error — check your connection.");
+                  } finally {
+                    setSending(false);
+                  }
+                }}
+                className="w-full px-5 py-3 bg-[#00FFFF] text-black rounded-lg font-semibold hover:bg-[#7AF3FF] transition mb-4"
+              >
+                {sending ? "Sending..." : "💬 Submit Feedback"}
+              </button>
+            </>
+          )}
 
+          <div className="flex flex-col gap-3 mb-6">
+            <a
+              href={shareUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="w-full px-5 py-3 bg-[#00FFFF] text-black rounded-lg font-semibold hover:bg-[#7AF3FF] transition"
+            >
+              📤 Share on X
+            </a>
 
-  return (
-    <main className="min-h-screen bg-black text-white p-6 flex items-center justify-center relative">
-      <FloatingLogosContainer />
-      <Confetti active={confettiActive} />
-      <div className="max-w-lg w-full bg-[#071019] rounded-2xl p-8 text-center border border-white/10 shadow-xl">
-        <h2 className="text-2xl font-bold text-[#FFD700] mb-3">
-          {completedAll
-            ? "🏆 You completed all levels — you're an OG!"
-            : passed
-            ? "✅ Level Passed!"
-            : "❌ Level Failed"}
-        </h2>
-        <p className="text-white/80 mb-2">Score: {percent}%</p>
-        <p className="text-white/80 mb-2">Points Earned: {pointsEarned}</p>
-
-        {/* ⭐ Only show stars & feedback for Level 2 */}
-        {playerLevel === 1 && (
-          <>
-            <div className="flex justify-center gap-2 mb-4">
-              {[1, 2, 3, 4, 5].map((n) => (
-                <button
-                  key={n}
-                  onClick={() => setRating(n)}
-                  className={`text-2xl transition ${n <= rating ? "text-[#FFD700]" : "text-white/50"}`}
-                >
-                  ★
-                </button>
-              ))}
-            </div>
-            <textarea
-              placeholder="Share feedback (optional)"
-              className="w-full p-3 text-sm text-black placeholder-gray-500 rounded-xl mb-4 focus:outline-none focus:ring-2 focus:ring-[#FFD700] bg-white"
-              value={feedback}
-              onChange={(e) => setFeedback(e.target.value)}
-            />
-          </>
-        )}
-            {playerLevel === 1 && (
-  <button
-    onClick={async () => {
-      if (!feedback && rating === 0) {
-        alert("Please add some feedback or a rating before submitting!");
-        return;
-      }
-      try {
-        const res = await fetch("/api/sendFeedback", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            username,
-            rating,
-            feedback,
-            level: LEVELS[playerLevel].title,
-          }),
-        });
-
-        if (res.ok) {
-          alert("✅ Feedback sent successfully!");
-          setFeedback("");
-          setRating(0);
-        } else {
-          alert("❌ Failed to send feedback. Please try again later.");
-        }
-      } catch (err) {
-        console.error("Error sending feedback:", err);
-        alert("⚠️ Network error — check your connection.");
-      }
-    }}
-    className="w-full px-5 py-3 bg-[#00FFFF] text-black rounded-lg font-semibold hover:bg-[#7AF3FF] transition mb-4"
-  >
-    💬 Submit Feedback
-  </button>
-)}
-
-
-        <div className="flex flex-col gap-3 mb-6">
-          <a
-            href={shareUrl}
-            target="_blank"
-            rel="noreferrer"
-            className="w-full px-5 py-3 bg-[#00FFFF] text-black rounded-lg font-semibold hover:bg-[#7AF3FF] transition"
-          >
-            📤 Share on X
-          </a>
-          
-          {!completedAll && passed && (
-                <button
-                    onClick={proceedAfterPass}
-                    className="w-full px-5 py-3 bg-[#FFD700] text-black rounded-lg font-semibold hover:bg-yellow-400 transition"
-  >
-                    ➡ Next Level
-                </button>
+            {!completedAll && passed && (
+              <button
+                onClick={proceedAfterPass}
+                className="w-full px-5 py-3 bg-[#FFD700] text-black rounded-lg font-semibold hover:bg-yellow-400 transition"
+              >
+                ➡ Next Level
+              </button>
             )}
 
-          {!passed && playerLevel !== 0 && (
+            {!passed && playerLevel !== 0 && (
+              <button
+                onClick={retryLevel}
+                className="w-full px-5 py-3 bg-[#FFD700] text-black rounded-lg font-semibold hover:bg-yellow-400 transition"
+              >
+                🔁 Retry Level
+              </button>
+            )}
+
             <button
-              onClick={retryLevel}
-              className="w-full px-5 py-3 bg-[#FFD700] text-black rounded-lg font-semibold hover:bg-yellow-400 transition"
+              onClick={restartAll}
+              className="w-full px-5 py-3 bg-white/10 text-white rounded-lg font-semibold hover:bg-white/20 transition"
             >
-              🔁 Retry Level
+              ← Back to Home
             </button>
+          </div>
+
+          {completedAll && (
+            <div className="mt-6 border-t border-white/20 pt-4 flex justify-center gap-6">
+              <a href="https://twitter.com/0x_cyph" target="_blank" rel="noreferrer" className="flex items-center gap-2 hover:opacity-80 transition">
+                <img src={cyphPfp.src} alt="Your PFP" className="w-10 h-10 rounded-full border-2 border-[#00FFFF]" />
+                <span className="text-white/80">@0x_cyph</span>
+              </a>
+              <a href="https://twitter.com/billions_ntwk" target="_blank" rel="noreferrer" className="flex items-center gap-2 hover:opacity-80 transition">
+                <img src={billionsPfp.src} alt="Billions PFP" className="w-10 h-10 rounded-full border-2 border-[#FFD700]" />
+                <span className="text-white/80">@billions_ntwk</span>
+              </a>
+            </div>
           )}
-          <button
-            onClick={restartAll}
-            className="w-full px-5 py-3 bg-white/10 text-white rounded-lg font-semibold hover:bg-white/20 transition"
-          >
-            ← Back to Home
-          </button>
         </div>
-
-        {/* Footer X handles */}
-{completedAll && (
-  <>
-    <div className="mt-6 border-t border-white/20 pt-4 flex justify-center gap-6">
-      <a href="https://twitter.com/0x_cyph" target="_blank" rel="noreferrer" className="flex items-center gap-2 hover:opacity-80 transition">
-        <img src={cyphPfp.src} alt="Your PFP" className="w-10 h-10 rounded-full border-2 border-[#00FFFF]" />
-        <span className="text-white/80">@0x_cyph</span>
-      </a>
-      <a href="https://twitter.com/billions_ntwk" target="_blank" rel="noreferrer" className="flex items-center gap-2 hover:opacity-80 transition">
-        <img src={billionsPfp.src} alt="Billions PFP" className="w-10 h-10 rounded-full border-2 border-[#FFD700]" />
-        <span className="text-white/80">@billions_ntwk</span>
-      </a>
-    </div>
-
-    {/* More levels message below the handles */}
-    {playerLevel === 1 && (
-      <p className="mt-2 text-xs text-white/50 text-center">
-        More levels will be added and shared by the builder on X.
-      </p>
-    )}
-  </>
-
-             )}
-             
-        </div>
-
       </main>
     );
   }
@@ -581,7 +554,6 @@ const shareUrl = `https://twitter.com/intent/tweet?text=${shareText}`;
   return (
     <main className="min-h-screen bg-black text-white p-6 flex items-center justify-center relative">
       <FloatingLogosContainer />
-
       <Confetti active={confettiActive} />
 
       <QuestionBox questionId={qIndex}>
