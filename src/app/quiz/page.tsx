@@ -707,6 +707,30 @@ export default function QuizPage() {
                   Retry Level {playerLevel + 1}
                 </button>
               )}
+              {/* 🌐 SHARE BUTTON */}
+             
+  <button
+    onClick={() => {
+      const score = pointsEarned;
+      const shareText = passed
+        ? `I just tried out the @billions_ntwk quiz and scored ${score} points! 🎯 You SHOULD TRY IT OUT with the link below 👇
+            https://billions-special.vercel.app
+
+            Don’t forget to share your score!!! 💙
+            gBillions💙💙`
+                    : `I just tried out the @billions_ntwk quiz and scored ${score} points 😅 If you can do better, try it out with the link below 👇
+            https://billions-special.vercel.app/home
+
+            Don’t forget to share your score!!! 💙
+            gBillions💙💙`;
+
+      const shareUrl = `https://twitter.com/intent/tweet?text=${encodeURIComponent(shareText)}`;
+      window.open(shareUrl, "_blank");
+    }}
+    className="w-full bg-[#1DA1F2] text-white font-bold py-3 rounded-xl hover:bg-[#0d8ddb] transition duration-300 shadow-lg shadow-[#1DA1F2]/30"
+  >
+    Share Your Score 💙
+  </button>
               <button 
                 onClick={goHome} 
                 className="w-full border border-white/20 text-white/80 font-semibold py-3 rounded-xl hover:bg-white/10 transition"
