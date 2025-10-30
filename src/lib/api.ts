@@ -1,4 +1,5 @@
-import { supabase } from "./supabaseClient";
+import { supabase } from "./supabaseClient"; // ✅ your initialized client
+export { supabase };
 
 // ===============================
 // 📘 TYPE DEFINITIONS
@@ -7,53 +8,47 @@ export interface UserRow {
   id: string;
   username: string;
   created_at?: string;
-}
-
-export interface LeaderboardUser {
-  username: string;
+  updated_at?: string;
+  points?: number;
+  level?: number;
 }
 
 export interface LeaderboardEntry {
-  user_id: string;
-  total_score: number | null;
-  max_level: number | null;
-  users?: LeaderboardUser | null;
-  username?: string;
+  id: string;
+  username: string;
+  points: number;
+  level: number;
+  updated_at?: string;
 }
 
-interface UserStatsResult {
-  total_score: number;
-  max_level: number;
+export interface UserStats {
+  points: number;
+  level: number;
   rank: number | null;
 }
 
 // ===============================
 // 👤 USER MANAGEMENT
 // ===============================
-/**
- * Ensure a user exists in the `users` table, or create a new one.
- */
 export async function getOrCreateUser(username: string): Promise<UserRow | null> {
   if (!username) return null;
 
   try {
-    // Check if user already exists
     const { data: existing, error: fetchErr } = await supabase
       .from("users")
-      .select("id, username")
+      .select("id, username, points, level")
       .ilike("username", username)
-      .limit(1)
-      .maybeSingle<UserRow>();
+      .maybeSingle();
 
     if (fetchErr) console.warn("supabase fetch user error", fetchErr);
     if (existing) return existing;
 
-    // Otherwise insert
+    // create new user
     const { data: inserted, error: insertErr } = await supabase
       .from("users")
       .insert([{ username }])
-      .select("id, username")
-      .maybeSingle<UserRow>();
+      .select("id, username, points, level")
+      .maybeSingle();
 
     if (insertErr) {
       console.warn("supabase insert user error", insertErr);
@@ -84,35 +79,27 @@ export async function saveProgress({
   current_question: number;
 }): Promise<boolean> {
   try {
-    const { data: existing, error: fetchErr } = await supabase
+    const { error } = await supabase
       .from("quiz_progress")
-      .select("id")
-      .eq("user_id", user_id)
-      .eq("level", level)
-      .limit(1)
-      .maybeSingle<{ id: string }>();
-
-    if (fetchErr) console.warn("saveProgress fetchErr", fetchErr);
-
-    if (existing?.id) {
-      await supabase
-        .from("quiz_progress")
-        .update({
+      .upsert(
+        {
+          user_id,
+          level,
           score,
           passed,
           current_question,
           updated_at: new Date().toISOString(),
-        })
-        .eq("id", existing.id);
-    } else {
-      await supabase
-        .from("quiz_progress")
-        .insert([{ user_id, level, score, passed, current_question }]);
-    }
+        },
+        { onConflict: "user_id, level" }
+      );
 
+    if (error) {
+      console.warn("saveProgress upsert error", error);
+      return false;
+    }
     return true;
   } catch (err) {
-    console.error("saveProgress error", err);
+    console.error("saveProgress unexpected error", err);
     return false;
   }
 }
@@ -130,94 +117,69 @@ export async function addLeaderboardPoints({
   level: number;
 }): Promise<boolean> {
   try {
+    // fetch current values
     const { data: existing, error: fetchErr } = await supabase
-      .from("leaderboard")
-      .select("id, total_score, max_level")
-      .eq("user_id", user_id)
-      .limit(1)
-      .maybeSingle<{ id: string; total_score: number | null; max_level: number | null }>();
+      .from("users")
+      .select("points, level")
+      .eq("id", user_id)
+      .maybeSingle();
 
-    if (fetchErr) console.warn("addLeaderboardPoints fetchErr", fetchErr);
+    if (fetchErr) {
+      console.warn("addLeaderboardPoints fetchErr", fetchErr);
+    }
 
-    if (existing?.id) {
-      const newTotal = (existing.total_score ?? 0) + points;
-      const newMax = Math.max(existing.max_level ?? 0, level);
+    const currentPoints = existing?.points ?? 0;
+    const currentLevel = existing?.level ?? 0;
 
-      await supabase
-        .from("leaderboard")
-        .update({
-          total_score: newTotal,
-          max_level: newMax,
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", existing.id);
-    } else {
-      await supabase
-        .from("leaderboard")
-        .insert([{ user_id, total_score: points, max_level: level }]);
+    const newPoints = currentPoints + points;
+    const newLevel = Math.max(currentLevel, level);
+
+    const { error: updateErr } = await supabase
+      .from("users")
+      .update({
+        points: newPoints,
+        level: newLevel,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", user_id);
+
+    if (updateErr) {
+      console.warn("addLeaderboardPoints updateErr", updateErr);
+      return false;
     }
 
     return true;
   } catch (err) {
-    console.error("addLeaderboardPoints error", err);
+    console.error("addLeaderboardPoints unexpected error", err);
     return false;
   }
 }
 
-/**
- * Fetch top leaderboard entries with relational join fallback.
- */
+// ===============================
+// 🧾 GET LEADERBOARD
+// ===============================
 export async function getLeaderboard(limit = 10): Promise<LeaderboardEntry[]> {
   try {
-    // Relational join (leaderboard → users)
     const { data, error } = await supabase
-      .from("leaderboard")
-      .select(`
-        user_id,
-        total_score,
-        max_level,
-        users!inner(username)
-      `)
-      .order("total_score", { ascending: false })
-      .limit(limit)
-      .returns<LeaderboardEntry[]>();
+      .from("users")
+      .select("id, username, points, level, updated_at")
+      .order("points", { ascending: false })
+      .limit(limit);
 
     if (error) {
-      console.warn("getLeaderboard relational fetch failed, fallback:", error);
-
-      const { data: rows, error: rowsErr } = await supabase
-        .from("leaderboard")
-        .select("user_id, total_score, max_level")
-        .order("total_score", { ascending: false })
-        .limit(limit)
-        .returns<Omit<LeaderboardEntry, "users" | "username">[]>();
-
-      if (rowsErr) {
-        console.error("getLeaderboard fallback error", rowsErr);
-        return [];
-      }
-
-      const userIds = rows.map((r) => r.user_id);
-      const { data: users } = await supabase
-        .from("users")
-        .select("id, username")
-        .in("id", userIds)
-        .returns<UserRow[]>();
-
-      const userMap = new Map<string, string>();
-      (users || []).forEach((u) => {
-        userMap.set(u.id, u.username);
-      });
-
-      return rows.map((r): LeaderboardEntry => ({
-        ...r,
-        username: userMap.get(r.user_id) ?? "Unknown",
-      }));
+      console.error("getLeaderboard error:", error.message);
+      return [];
     }
 
-    return data ?? [];
-  } catch (err) {
-    console.error("getLeaderboard error", err);
+    return (data || []).map((entry) => ({
+      id: entry.id,
+      username: entry.username ?? "Unknown",
+      points: entry.points ?? 0,
+      level: entry.level ?? 0,
+      updated_at: entry.updated_at,
+    }));
+  } catch (err: any) {
+    console.error("getLeaderboard unexpected error:", err.message);
     return [];
   }
 }
@@ -225,29 +187,27 @@ export async function getLeaderboard(limit = 10): Promise<LeaderboardEntry[]> {
 // ===============================
 // 📊 USER STATS
 // ===============================
-export async function getUserStats(user_id: string): Promise<UserStatsResult | null> {
+export async function getUserStats(user_id: string): Promise<UserStats | null> {
   if (!user_id) return null;
 
   try {
     const { data: self } = await supabase
-      .from("leaderboard")
-      .select("total_score, max_level")
-      .eq("user_id", user_id)
-      .limit(1)
-      .maybeSingle<{ total_score: number | null; max_level: number | null }>();
+      .from("users")
+      .select("points, level")
+      .eq("id", user_id)
+      .maybeSingle();
 
-    const top = await getLeaderboard(100);
+    if (!self) return { points: 0, level: 0, rank: null };
 
-    if (!self) {
-      return { total_score: 0, max_level: 0, rank: null };
-    }
-
-    const rank = top.findIndex((r) => r.user_id === user_id);
+    // leaderboard for rank
+    const leaderboard = await getLeaderboard(100);
+    const rankIndex = leaderboard.findIndex((r) => r.id === user_id);
+    const rank = rankIndex >= 0 ? rankIndex + 1 : null;
 
     return {
-      total_score: self.total_score ?? 0,
-      max_level: self.max_level ?? 0,
-      rank: rank >= 0 ? rank + 1 : null,
+      points: self.points ?? 0,
+      level: self.level ?? 0,
+      rank,
     };
   } catch (err) {
     console.error("getUserStats error", err);
@@ -256,21 +216,27 @@ export async function getUserStats(user_id: string): Promise<UserStatsResult | n
 }
 
 // ===============================
-// 🔁 RESET
+// 🔁 RESET USER PROGRESS
 // ===============================
 export async function resetUserProgress(user_id: string): Promise<boolean> {
   try {
     if (!user_id) return false;
 
     await supabase.from("quiz_progress").delete().eq("user_id", user_id);
-    await supabase
-      .from("leaderboard")
+
+    const { error } = await supabase
+      .from("users")
       .update({
-        total_score: 0,
-        max_level: 0,
+        points: 0,
+        level: 0,
         updated_at: new Date().toISOString(),
       })
-      .eq("user_id", user_id);
+      .eq("id", user_id);
+
+    if (error) {
+      console.warn("resetUserProgress error:", error);
+      return false;
+    }
 
     return true;
   } catch (err) {

@@ -1,71 +1,95 @@
+// src/app/api/feedback/route.ts
 import { NextResponse } from "next/server";
 import { Resend } from "resend";
+// NOTE: We assume that the Supabase client is correctly exported from this path
+import { supabase } from "@/lib/supabaseClient"; 
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 
-export async function POST(req: Request) {
-  try {
-    const { username, rating, feedback, level } = await req.json();
+// Interface for the data expected from the client
+interface FeedbackPayload {
+  user_id?: string; // Optional, useful if the user is logged in
+  username?: string; // Optional display name
+  rating: number | null; // Rating value (e.g., 1 to 5 stars)
+  feedback: string; // The main text content of the feedback
+  level?: string | number | null; // The level/context where the feedback occurred (New)
+}
 
-    if (!feedback && !rating) {
+export async function POST(request: Request) {
+  let body: FeedbackPayload;
+
+  try {
+    // 1. Parse the incoming JSON body
+    body = (await request.json()) as FeedbackPayload;
+
+    // --- Validation ---
+    // Require at least feedback text or a rating to proceed.
+    if (!body.feedback && !body.rating) {
       return NextResponse.json(
-        { error: "Missing feedback or rating" },
+        { ok: false, message: "Feedback text or a rating is required." }, 
         { status: 400 }
       );
     }
+    
+    // 2. Prepare the data for Supabase insertion
+    const dataToInsert = {
+      user_id: body.user_id ?? null,
+      username: body.username ?? 'Anonymous',
+      rating: body.rating ?? null,
+      feedback_text: body.feedback ? body.feedback.trim() : null,
+      context_level: body.level ?? null, // Save the level/context
+    };
 
+    // 3. --- DATABASE SAVE (Supabase) ---
+    const { error: dbError } = await supabase
+      .from("user_feedback")
+      .insert([dataToInsert]);
+
+    if (dbError) {
+      console.error("Supabase feedback insert error:", dbError);
+      // We will still attempt to send the email, but warn the client that persistence failed.
+    }
+    
+    // 4. --- EMAIL NOTIFICATION (Resend) ---
     const to = process.env.TO_EMAIL;
     const from = process.env.FROM_EMAIL;
 
     if (!to || !from || !process.env.RESEND_API_KEY) {
-      console.error("Missing TO_EMAIL, FROM_EMAIL, or RESEND_API_KEY env vars");
-      return NextResponse.json(
-        { error: "Server not configured properly" },
-        { status: 500 }
-      );
+      console.error("Missing email ENV vars. Skipping email notification.");
+    } else {
+        try {
+            await resend.emails.send({
+                from,
+                to,
+                subject: `Quiz Feedback — ${body.level || "General"}`,
+                html: `
+                    <div style="font-family:sans-serif;padding:16px;background:#f9f9f9;border-radius:12px;">
+                        <h2 style="color:#FFD700;">📩 New Feedback Received</h2>
+                        <p><strong>User:</strong> ${body.username || "Anonymous"}</p>
+                        <p><strong>Level:</strong> ${body.level || "General"}</p>
+                        <p><strong>Rating:</strong> ${body.rating || "No rating provided"}</p>
+                        <h3 style="margin-bottom:8px;">Feedback Message:</h3>
+                        <p style="background:#fff;padding:12px;border-radius:8px;border:1px solid #eee;">
+                            ${body.feedback || "(No message provided, only rating)"}
+                        </p>
+                    </div>
+                `,
+            });
+        } catch (emailErr) {
+            console.error("Resend API error:", emailErr);
+            // We log the email error but don't fail the entire request, since the DB save is more critical.
+        }
     }
 
-    try {
-      await resend.emails.send({
-        from,
-        to,
-        subject: `Billions Quiz Feedback — ${level || "General"}`,
-        html: `
-          <div style="font-family:sans-serif;padding:16px;background:#f9f9f9;">
-            <h2>📩 New Feedback Received</h2>
-            <p><strong>User:</strong> ${username || "Anonymous"}</p>
-            <p><strong>Level:</strong> ${level || "Unknown"}</p>
-            <p><strong>Rating:</strong> ${rating || "No rating"}</p>
-            <p><strong>Feedback:</strong></p>
-            <p style="background:#fff;padding:12px;border-radius:8px;">${feedback || "(no message)"}</p>
-          </div>
-        `,
-      });
-    } catch (err: any) {
-      console.error("Resend API error:", err);
+    // 5. Success response (regardless of email status, as long as DB was attempted)
+    return NextResponse.json({ 
+        ok: true, 
+        message: dbError ? "Feedback received but database save failed." : "Feedback successfully received and saved."
+    }, { status: dbError ? 500 : 200 });
 
-      if (err.status === 403) {
-        return NextResponse.json(
-          {
-            error:
-              "Forbidden: likely an unverified sender or invalid API key. Check FROM_EMAIL and RESEND_API_KEY.",
-          },
-          { status: 403 }
-        );
-      }
-
-      return NextResponse.json(
-        { error: err.message || "Resend email send failed" },
-        { status: 500 }
-      );
-    }
-
-    return NextResponse.json({ success: true });
-  } catch (err: any) {
-    console.error("Server error:", err);
-    return NextResponse.json(
-      { error: err.message || "Internal server error" },
-      { status: 500 }
-    );
+  } catch (err) {
+    // This catches JSON parsing errors or other unexpected issues
+    console.error("Feedback POST error", err);
+    return NextResponse.json({ ok: false, message: "Invalid request payload or internal server error." }, { status: 400 });
   }
 }

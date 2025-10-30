@@ -3,32 +3,27 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
-import { getLeaderboard, getUserStats, LeaderboardEntry } from "@/lib/api";
+import { getLeaderboard, getUserStats, LeaderboardEntry, supabase } from "@/lib/api";
 import { motion } from "framer-motion";
 import logoSrc from "@/public/logos/billions_logo.png";
 
 interface UserStats {
-  points?: number;
-  total_score: number;
-  max_level: number;
+  points: number;
+  level: number;
   rank: number | null;
 }
 
-// Hook to get window size
 function useWindowSize() {
   const [size, setSize] = useState({ width: 0, height: 0 });
-
   useEffect(() => {
     const updateSize = () => setSize({ width: window.innerWidth, height: window.innerHeight });
     updateSize();
     window.addEventListener("resize", updateSize);
     return () => window.removeEventListener("resize", updateSize);
   }, []);
-
   return size;
 }
 
-// FloatingLogo component
 function FloatingLogo({
   src,
   size = 80,
@@ -69,8 +64,7 @@ export default function HomePage() {
   const router = useRouter();
   const [username, setUsername] = useState<string | null>(null);
   const [userId, setUserId] = useState<string | null>(null);
-  
-  const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]); 
+  const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
   const [userStats, setUserStats] = useState<UserStats | null>(null);
   const [loading, setLoading] = useState(true);
   const windowSize = useWindowSize();
@@ -78,56 +72,66 @@ export default function HomePage() {
     { size: number; xStart: number; yStart: number; duration: number }[]
   >([]);
 
-  // Redirect if not logged in
   useEffect(() => {
     const storedUsername = localStorage.getItem("bna_username");
     const storedUserId = localStorage.getItem("bna_user_id");
-
     if (!storedUsername) {
       router.push("/login");
       return;
     }
-
     setUsername(storedUsername);
     setUserId(storedUserId || null);
   }, [router]);
 
-  // Fetch leaderboard and user stats
-  useEffect(() => {
+  const fetchData = async () => {
     if (!username || !userId) return;
+    setLoading(true);
+    try {
+      const [lb, stats] = await Promise.all([getLeaderboard(10), getUserStats(userId)]);
+      setLeaderboard(lb || []);
+      setUserStats(stats || null);
+    } catch (err) {
+      console.error("Error loading leaderboard or stats:", err);
+      setUserStats(null);
+    } finally {
+      setLoading(false);
+    }
+  };
 
-    (async () => {
-      setLoading(true);
-      try {
-        const lb = await getLeaderboard(10);
-        setLeaderboard(lb || []);
-
-        const stats = await getUserStats(userId);
-        if (stats) {
-          setUserStats(stats);
-        } else {
-          setUserStats(null);
-        }
-      } catch (err) {
-        console.error("Error loading leaderboard or stats:", err);
-        setUserStats(null);
-      } finally {
-        setLoading(false);
-      }
-    })();
+  useEffect(() => {
+    if (username && userId) fetchData();
   }, [username, userId]);
 
-  // Generate floating logos after window size is available
+  // Real-time updates
+  useEffect(() => {
+    if (!userId) return;
+    const channel = supabase
+      .channel("realtime-dashboard")
+      .on(
+        "postgres_changes",
+        { event: "UPDATE", schema: "public", table: "users" },
+        (payload) => {
+          if (payload.new.id === userId) {
+            fetchData();
+          } else {
+            getLeaderboard(10).then(setLeaderboard);
+          }
+        }
+      )
+      .subscribe();
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [userId]);
+
   useEffect(() => {
     if (!windowSize.width || !windowSize.height) return;
-
     const generated = Array.from({ length: 12 }).map(() => ({
       size: 40 + Math.random() * 60,
       xStart: Math.random() * windowSize.width,
       yStart: Math.random() * windowSize.height,
       duration: 8 + Math.random() * 8,
     }));
-
     setLogos(generated);
   }, [windowSize]);
 
@@ -137,11 +141,10 @@ export default function HomePage() {
     localStorage.removeItem("bna_user_id");
     router.push("/login");
   };
-
   const resetLevel = () => {
     if (!username) return;
     localStorage.setItem(`bna_progress_${username}`, JSON.stringify({ levelIndex: 0 }));
-    setUserStats((prev) => (prev ? { ...prev, max_level: 0, total_score: 0, points: 0 } : null));
+    setUserStats((prev) => (prev ? { ...prev, level: 0, points: 0 } : null));
     console.log("Your progress has been reset!");
   };
 
@@ -175,9 +178,7 @@ export default function HomePage() {
             <div className="text-right">
               <p className="text-xs text-white/60">Current Level</p>
               <p className="text-sm font-semibold text-[#FFD700]">
-                {userStats
-                  ? `Level ${Math.min((userStats.max_level ?? 0) + 1, 2)}`
-                  : "Level 1"}
+                {userStats ? `Level ${(userStats.level ?? 0) + 1}` : "Level 1"}
               </p>
             </div>
           </div>
@@ -214,14 +215,13 @@ export default function HomePage() {
                 <div>
                   Total Points:{" "}
                   <span className="text-[#FFD700] font-bold">
-                    {userStats?.total_score ?? userStats?.points ?? 0}
+                    {userStats?.points ?? 0}
                   </span>
                 </div>
-
                 <div>
                   Highest Level:{" "}
                   <span className="text-[#FFD700] font-bold">
-                    Level {Math.min((userStats?.max_level ?? 0) + 1, 2)}
+                    Level {(userStats?.level ?? 0) + 1}
                   </span>
                 </div>
                 <div>
@@ -262,10 +262,10 @@ export default function HomePage() {
           ) : (
             <ol className="space-y-2">
               {leaderboard.map((row, i) => {
-                const name = row.users?.username ?? row.username ?? "Unknown Player"; 
+                const name =  row.username ?? "Unknown Player";
                 return (
                   <li
-                    key={row.user_id ?? i}
+                    key={row.id ?? i}
                     className="flex items-center justify-between bg-white/5 p-2 rounded"
                   >
                     <div>
@@ -273,10 +273,10 @@ export default function HomePage() {
                         {i + 1}. {name}
                       </div>
                       <div className="text-xs text-white/60">
-                        Level {Math.min((row.max_level ?? 0) + 1, 2)}
+                        Level {(row.level ?? 0) + 1}
                       </div>
                     </div>
-                    <div className="font-bold text-[#FFD700]">{row.total_score ?? 0}</div>
+                    <div className="font-bold text-[#FFD700]">{row.points ?? 0}</div>
                   </li>
                 );
               })}
