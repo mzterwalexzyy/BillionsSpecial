@@ -716,12 +716,12 @@ export default function QuizPage() {
         ? `I just tried out the @billions_ntwk quiz and scored ${score} points! 🎯 You SHOULD TRY IT OUT with the link below 👇
             https://billions-special.vercel.app
 
-            Don’t forget to share your score!!! 💙
+            Don’t forget to share your score!!! 
             gBillions💙💙`
                     : `I just tried out the @billions_ntwk quiz and scored ${score} points 😅 If you can do better, try it out with the link below 👇
             https://billions-special.vercel.app/home
 
-            Don’t forget to share your score!!! 💙
+            Don’t forget to share your score!!! 
             gBillions💙💙`;
 
       const shareUrl = `https://twitter.com/intent/tweet?text=${encodeURIComponent(shareText)}`;
