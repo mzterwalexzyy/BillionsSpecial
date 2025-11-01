@@ -72,6 +72,7 @@ export default function HomePage() {
     { size: number; xStart: number; yStart: number; duration: number }[]
   >([]);
 
+  // Load username & userId from localStorage
   useEffect(() => {
     const storedUsername = localStorage.getItem("bna_username");
     const storedUserId = localStorage.getItem("bna_user_id");
@@ -83,6 +84,7 @@ export default function HomePage() {
     setUserId(storedUserId || null);
   }, [router]);
 
+  // Fetch leaderboard and user stats
   const fetchData = async () => {
     if (!username || !userId) return;
     setLoading(true);
@@ -102,28 +104,36 @@ export default function HomePage() {
     if (username && userId) fetchData();
   }, [username, userId]);
 
-  // Real-time updates
-  useEffect(() => {
-    if (!userId) return;
-    const channel = supabase
-      .channel("realtime-dashboard")
-      .on(
-        "postgres_changes",
-        { event: "UPDATE", schema: "public", table: "users" },
-        (payload) => {
-          if (payload.new.id === userId) {
-            fetchData();
-          } else {
-            getLeaderboard(10).then(setLeaderboard);
-          }
-        }
-      )
-      .subscribe();
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, [userId]);
+  // Real-time updates for leaderboard / user stats
+useEffect(() => {
+  if (!userId) return;
 
+  const channel = supabase
+    .channel("realtime-dashboard")
+    .on(
+      "postgres_changes",
+      { event: "UPDATE", schema: "public", table: "users" },
+      (payload) => {
+        // Wrap async in an IIFE
+        (async () => {
+          if (payload.new.id === userId) {
+            await fetchData();
+          } else {
+            const lb = await getLeaderboard(10);
+            setLeaderboard(lb);
+          }
+        })();
+      }
+    )
+    .subscribe();
+
+  return () => {
+    supabase.removeChannel(channel);
+  };
+}, [userId]);
+
+
+  // Generate floating logos
   useEffect(() => {
     if (!windowSize.width || !windowSize.height) return;
     const generated = Array.from({ length: 12 }).map(() => ({
@@ -136,11 +146,14 @@ export default function HomePage() {
   }, [windowSize]);
 
   const startQuiz = () => router.push("/quiz");
+  const startScramble = () => router.push("/scramble");
+
   const signOut = () => {
     localStorage.removeItem("bna_username");
     localStorage.removeItem("bna_user_id");
     router.push("/login");
   };
+
   const resetLevel = () => {
     if (!username) return;
     localStorage.setItem(`bna_progress_${username}`, JSON.stringify({ levelIndex: 0 }));
@@ -172,7 +185,7 @@ export default function HomePage() {
                 Welcome{username ? `, ${username}` : ""}
               </h1>
               <p className="text-sm text-white/70">
-                Start the Billions Network quiz to earn points and climb the leaderboard.
+                Start the Billions Network quiz or scramble to earn points and climb the leaderboard.
               </p>
             </div>
             <div className="text-right">
@@ -183,27 +196,37 @@ export default function HomePage() {
             </div>
           </div>
 
-          {/* ACTION BUTTONS */}
-          <div className="flex gap-4 mb-6">
-            <button
-              onClick={startQuiz}
-              className="flex-1 py-3 rounded-lg bg-[#00FFFF] text-black font-bold hover:bg-[#00e6e6] transition"
-            >
-              Start Quiz
-            </button>
-            <button
-              onClick={signOut}
-              className="py-3 px-4 rounded-lg bg-white/5 border border-white/10 hover:bg-white/10 transition"
-            >
-              Sign Out
-            </button>
-            <button
-              onClick={resetLevel}
-              className="py-3 px-4 rounded-lg bg-red-600 hover:bg-red-700 text-white font-semibold transition"
-            >
-              Reset Level
-            </button>
-          </div>
+                      {/* ACTION BUTTONS */}
+            <div className="flex flex-wrap gap-3 mb-6">
+              <button
+                onClick={startQuiz}
+                className="flex-1 min-w-[45%] py-3 rounded-lg bg-[#00FFFF] text-black font-bold hover:bg-[#00e6e6] transition"
+              >
+                Start Quiz
+              </button>
+
+              <button
+                onClick={startScramble}
+                className="flex-1 min-w-[45%] py-3 rounded-lg bg-[#FFD700] text-black font-bold hover:bg-yellow-400 transition"
+              >
+                Start Scramble
+              </button>
+
+              <button
+                onClick={signOut}
+                className="flex-1 min-w-[45%] py-3 rounded-lg bg-white/5 border border-white/10 hover:bg-white/10 transition text-sm"
+              >
+                Sign Out
+              </button>
+
+              <button
+                onClick={resetLevel}
+                className="flex-1 min-w-[45%] py-3 rounded-lg bg-red-600 hover:bg-red-700 text-white font-semibold transition text-sm"
+              >
+                Reset Level
+              </button>
+            </div>
+
 
           {/* USER STATS */}
           <div className="bg-white/5 p-4 rounded-lg">
@@ -262,7 +285,7 @@ export default function HomePage() {
           ) : (
             <ol className="space-y-2">
               {leaderboard.map((row, i) => {
-                const name =  row.username ?? "Unknown Player";
+                const name = row.username ?? "Unknown Player";
                 return (
                   <li
                     key={row.id ?? i}
